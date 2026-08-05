@@ -195,14 +195,22 @@ function Sentence({ state, blocked }: { state: TypingState; blocked: BlockedKey 
           const errors = state.charErrors.get(i) ?? 0
 
           if (i === state.cursor) {
+            // Fon ATAYIN yo'q: joriy belgini kursor chizig'ining o'zi ko'rsatadi.
+            //
+            // Rang ham YOZILMAGAN belgilarniki bilan bir xil (pastdagi oxirgi
+            // tarmoqqa qarang): kursordagi harf hali terilmagan, shuning uchun
+            // uni yorqin qilish "bu allaqachon yozilgan" degan yolg'on signal
+            // berardi. Bloklangan holat esa chiziq VA harf rangidan bilinadi.
             return (
               <span
                 key={i}
                 className={[
-                  'relative rounded-[3px]',
-                  blocked === null
-                    ? 'bg-[#5ee6c1]/15 text-[#e6edf3]'
-                    : 'bg-[#ff6b6b]/20 text-[#ffc2c2]',
+                  'relative',
+                  blocked !== null
+                    ? 'text-[#ffc2c2]'
+                    : errors > 0
+                      ? 'text-[#8a6a70]'
+                      : 'text-[#46566a]',
                 ].join(' ')}
               >
                 {/* Kursor chizig'i alohida element: probel ustida ham ko'rinadi. */}
@@ -210,9 +218,16 @@ function Sentence({ state, blocked }: { state: TypingState; blocked: BlockedKey 
                   className="absolute top-[0.12em] bottom-[0.12em] -left-px w-[2px] animate-pulse rounded-full motion-reduce:animate-none"
                   style={{ backgroundColor: caretColor }}
                 />
-                {/* Kursor probel ustida turganda uzilmas probel qo'yiladi: oddiy probel
-                    qator oxiriga tushib qolsa kursor ko'rinmay ketardi. */}
-                {ch === ' ' ? '\u00a0' : ch}
+                {/* Probel ODDIY probel bo'lib qoladi.
+                    Avval bu yerda uzilmas probel (U+00A0) qo'yilardi: kursor qator
+                    oxiriga tushganda ko'rinsin degan maqsadda. Lekin uzilmas probel
+                    QATOR UZISH IMKONIYATINI YO'Q QILADI. Kursor "way| to" dagi
+                    probelga tushishi bilan `to` keyingi so'zga yopishib qolardi va
+                    ikkalasi birga pastki qatorga sakrardi, ya'ni matn terish
+                    davomida o'z-o'zidan qayta joylashardi.
+                    `whitespace-pre-wrap` qator oxiridagi probelni baribir saqlaydi,
+                    shuning uchun kursorning ko'rinishi ham yo'qolmaydi. */}
+                {ch}
               </span>
             )
           }

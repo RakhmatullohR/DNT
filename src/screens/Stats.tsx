@@ -26,6 +26,7 @@ import {
   unknownLessonCount,
 } from '../store/lessons.ts'
 import {
+  audioComparison,
   clearStats,
   corruptStatsBackup,
   dailySeries,
@@ -38,7 +39,7 @@ import {
   streakDays,
   totals,
 } from '../store/stats.ts'
-import type { StatsData } from '../store/stats.ts'
+import type { AudioBucket, AudioComparison, StatsData } from '../store/stats.ts'
 
 const PANEL = 'rounded-2xl border border-white/[0.07] bg-[#0e141c]'
 const LABEL = 'font-mono text-[10px] uppercase tracking-[0.22em] text-[#7d8b9c]'
@@ -90,6 +91,26 @@ function formatPercent(ratio: number): string {
   return `${(safe * 100).toFixed(1)}%`
 }
 
+/**
+ * Farq uchun ALOHIDA formatlovchilar.
+ *
+ * `formatWpm`/`formatPercent` manfiy qiymatni 0 ga tenglashtiradi — bu yagona
+ * qiymat uchun to'g'ri (manfiy wpm ma'nosiz), lekin FARQ uchun halokatli:
+ * "ovoz bilan sekinroq teraman" degan eng muhim signal jimgina "0" bo'lib
+ * ko'rinardi va gate teskari xulosaga olib kelardi.
+ */
+function formatWpmDelta(value: number): string {
+  if (!Number.isFinite(value)) return '0'
+  const rounded = Math.round(value)
+  return `${rounded > 0 ? '+' : ''}${rounded}`
+}
+
+function formatPercentDelta(ratio: number): string {
+  if (!Number.isFinite(ratio)) return '0.0%'
+  const pct = Math.max(-100, Math.min(100, ratio * 100))
+  return `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`
+}
+
 /** 'YYYY-MM-DD' -> 'MM.DD' — grafik yorlig'i uchun. */
 function shortDay(day: string): string {
   return day.slice(5).replace('-', '.')
@@ -112,10 +133,18 @@ type Snapshot = {
   streak: number
   /** `minExposures` ATAYIN berilmaydi — chegara `stats.ts` da belgilangan (PLAN §6). */
   hardest: HardWord[]
+  /** ⭐ M2/M3 gate (PLAN §8): ovozli va ovozsiz mashq yig'indilari. */
+  audio: AudioComparison
 }
 
 function readSnapshot(): Snapshot {
-  return { stats: loadStats(), summary: totals(), streak: streakDays(), hardest: hardestWords() }
+  return {
+    stats: loadStats(),
+    summary: totals(),
+    streak: streakDays(),
+    hardest: hardestWords(),
+    audio: audioComparison(),
+  }
 }
 
 function hasHistory(stats: StatsData): boolean {
@@ -188,6 +217,39 @@ function Metric({ label, value, hint, color }: { label: string; value: string; h
         {value}
       </div>
       {hint !== undefined ? <div className="mt-2 font-mono text-[11px] text-[#5c6b7d]">{hint}</div> : null}
+    </div>
+  )
+}
+
+/**
+ * ⭐ M2/M3 gate xulosasi uchun minimal namuna (PLAN §8).
+ *
+ * Reja "bir hafta kunma-kun" deydi — bu kuniga bir necha gapdan ham ko'p
+ * chiqadi. Chegara ATAYIN past emas: 5-6 gapdan chiqarilgan xulosa shovqin
+ * bo'lardi va gate'ning maqsadi aynan shovqinni tasodifiy signaldan ajratish.
+ */
+const GATE_MIN_SENTENCES = 20
+
+function GateColumn({ title, bucket, accent }: { title: string; bucket: AudioBucket; accent: string }) {
+  return (
+    <div className="rounded-xl border border-white/[0.06] bg-[#0b1118] p-4">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="font-mono text-[11px] tracking-[0.12em] text-[#7d8b9c]">{title}</span>
+        <span className="font-mono text-[10px] tabular-nums text-[#4a5768]">
+          {bucket.sentences} gap
+        </span>
+      </div>
+      <div
+        className="mt-3 font-mono text-2xl leading-none font-semibold tabular-nums"
+        style={{ color: accent }}
+      >
+        {formatWpm(bucket.netWpm)}
+      </div>
+      <div className="mt-1 font-mono text-[10px] text-[#4a5768]">net wpm</div>
+      <div className="mt-3 font-mono text-[13px] tabular-nums text-[#e6edf3]">
+        {formatPercent(bucket.accuracy)}
+      </div>
+      <div className="mt-1 font-mono text-[10px] text-[#4a5768]">aniqlik</div>
     </div>
   )
 }
@@ -430,6 +492,66 @@ export function Stats() {
               bo&apos;yicha va faqat kamida 5 marta uchragan so&apos;zlar orasida. Xom son bilan
               tartiblansa ro&apos;yxat boshini doim <span className="text-[#7d8b9c]">the</span>{' '}
               egallardi — u qiyin bo&apos;lgani uchun emas, ko&apos;p uchragani uchun.
+            </p>
+          </section>
+
+          {/*
+            ⭐ M2/M3 gate (PLAN §8, §10). Rejaning 1-raqamli xatari: matn ko'rinib
+            turgani uchun mashqni ovozsiz ham bajarish mumkin, ya'ni audio
+            majburiy emas. Butun pedagogik da'vo shu oqimning e'tiborga
+            olinishiga tayanadi — va uni tekshirishning yagona yo'li ovozli va
+            ovozsiz mashqni yonma-yon qo'yish.
+          */}
+          <section className={`${PANEL} p-5 sm:p-6`}>
+            <div className="flex flex-wrap items-baseline justify-between gap-3">
+              <h2 className={LABEL}>ovozli / ovozsiz taqqoslash</h2>
+              <span className="font-mono text-[10px] text-[#4a5768]">m2/m3 gate</span>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <GateColumn title="ovoz yoqiq" bucket={snapshot.audio.on} accent="#5ee6c1" />
+              <GateColumn title="ovoz o'chiq" bucket={snapshot.audio.off} accent="#7d8b9c" />
+            </div>
+
+            {snapshot.audio.on.sentences < GATE_MIN_SENTENCES ||
+            snapshot.audio.off.sentences < GATE_MIN_SENTENCES ? (
+              <p className={`${NOTE} mt-5`}>
+                Xulosa uchun har ikkala holatda kamida {GATE_MIN_SENTENCES} tadan gap
+                kerak. Hozir:{' '}
+                <span className="text-[#7d8b9c]">
+                  {snapshot.audio.on.sentences} ovozli / {snapshot.audio.off.sentences} ovozsiz
+                </span>
+                . Mashq ekranidagi ovoz tugmasini kunma-kun almashtirib boring.
+              </p>
+            ) : (
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-white/[0.06] bg-[#0b1118] p-4">
+                  <div className="font-mono text-[10px] text-[#4a5768]">wpm farqi</div>
+                  <div className="mt-2 font-mono text-lg tabular-nums text-[#e6edf3]">
+                    {formatWpmDelta(snapshot.audio.on.netWpm - snapshot.audio.off.netWpm)}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-white/[0.06] bg-[#0b1118] p-4">
+                  <div className="font-mono text-[10px] text-[#4a5768]">aniqlik farqi</div>
+                  <div className="mt-2 font-mono text-lg tabular-nums text-[#e6edf3]">
+                    {formatPercentDelta(snapshot.audio.on.accuracy - snapshot.audio.off.accuracy)}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {snapshot.audio.unknown > 0 ? (
+              <p className={`${NOTE} mt-4`}>
+                {snapshot.audio.unknown} ta eski gapda ovoz holati yozilmagan — ular
+                taqqoslashga kirmaydi.
+              </p>
+            ) : null}
+
+            <p className={`${NOTE} mt-5 border-t border-white/[0.06] pt-4`}>
+              Bir hafta kunma-kun ovozni yoqib/o&apos;chirib bir xil hajmda matn tering.
+              Agar wpm va aniqlik farqi sezilarli bo&apos;lmasa — audio qayta
+              ishlanmayapti va mexanikani qayta ko&apos;rib chiqish kerak. Bu raqamlar
+              o&apos;sha qarorni qabul qilish uchun.
             </p>
           </section>
 

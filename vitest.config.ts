@@ -19,6 +19,16 @@ export default defineConfig({
           include: ['tests/server/**/*.test.ts'],
         },
       },
+      {
+        // Brauzer API'lariga tayanadigan klient moduli (`AudioManager`).
+        // `jsdom` ATAYIN qo'shilmagan: kerak bo'lgani `window.AudioContext` va
+        // `fetch` — ikkalasi ham testda qo'lda qo'yiladi, yangi bog'liqliksiz.
+        test: {
+          name: 'client',
+          environment: 'node',
+          include: ['tests/client/**/*.test.ts'],
+        },
+      },
     ],
   },
 })

@@ -60,6 +60,15 @@ export type SentenceRecord = {
   restarts: number
   /** `Escape` bilan tashlangan gap — seans yig'indisidan chiqarib tashlanadi. */
   skipped: boolean
+  /**
+   * Gap yozilayotganda audio yoqiq edimi (PLAN §8 dagi ⭐ M2/M3 gate).
+   *
+   * ATAYIN IXTIYORIY. Bu maydon qo'shilishidan oldin yozilgan gaplarda ovoz
+   * holati NOMA'LUM — ularni `false` deb hisoblash "ovozsiz" ustunini eski
+   * tarix bilan ifloslantirardi va gate'ning butun ma'nosini yo'q qilardi.
+   * `undefined` qolgan yozuvlar taqqoslashdan chiqarib tashlanadi.
+   */
+  audioEnabled?: boolean
 }
 
 export type SessionRecord = {
@@ -254,6 +263,8 @@ function toSentenceRecord(raw: unknown): SentenceRecord | null {
     accuracy: clamp01(toNonNegative(raw['accuracy'])),
     restarts: Math.floor(toNonNegative(raw['restarts'])),
     skipped: raw['skipped'] === true,
+    // `=== true` EMAS: yo'q maydon `false` ga aylanmasligi kerak (yuqoridagi izoh).
+    ...(typeof raw['audioEnabled'] === 'boolean' ? { audioEnabled: raw['audioEnabled'] } : {}),
   }
 }
 
@@ -633,6 +644,98 @@ export function hardestWords(
   })
 
   return rows.slice(0, max)
+}
+
+/** ⭐ M2/M3 gate uchun bitta ustun: ovoz yoqiq YOKI o'chiq holatdagi yig'indi. */
+export type AudioBucket = {
+  sentences: number
+  activeMs: number
+  keystrokes: number
+  correctKeystrokes: number
+  netWpm: number
+  rawWpm: number
+  accuracy: number
+}
+
+export type AudioComparison = {
+  on: AudioBucket
+  off: AudioBucket
+  /** Ovoz holati yozilmagan (eski) gaplar. Taqqoslashga KIRMAYDI. */
+  unknown: number
+}
+
+function emptyBucket(): AudioBucket {
+  return {
+    sentences: 0,
+    activeMs: 0,
+    keystrokes: 0,
+    correctKeystrokes: 0,
+    netWpm: 0,
+    rawWpm: 0,
+    accuracy: 0,
+  }
+}
+
+/**
+ * ⭐ PLAN §8 dagi M2/M3 gate'ning O'LCHOV ASBOBI.
+ *
+ * Reja shuni talab qiladi: bir hafta kunma-kun ovoz yoqiq/o'chiq almashtirib
+ * bir xil hajmda matn teriladi va WPM bilan aniqlik TAQQOSLANADI. Farq
+ * bo'lmasa — audio qayta ishlanmayapti va mexanikani qayta ko'rish kerak.
+ *
+ * Almashtirgichning o'zi (`Practice.tsx`) boshidan bor edi, lekin ovoz holati
+ * hech qayerda YOZILMAGANI uchun tajribaning natijasini o'qib bo'lmasdi —
+ * ya'ni loyihaning butun pedagogik farazini tekshiradigan yagona sinov
+ * o'tkazib bo'lmaydigan holatda qolgan edi.
+ *
+ * WPM `activeMs` bo'yicha OG'IRLANADI: qisqa gap uzun gap bilan teng vaznga
+ * ega bo'lsa, bitta uch so'zlik gap butun kunlik o'rtachani tortib ketardi.
+ *
+ * `skipped` (Escape) gaplar chiqarib tashlanadi — ular seans yig'indisiga ham
+ * kirmaydi (PLAN §6).
+ */
+export function audioComparison(): AudioComparison {
+  const on = emptyBucket()
+  const off = emptyBucket()
+  let unknown = 0
+
+  let netOn = 0
+  let rawOn = 0
+  let netOff = 0
+  let rawOff = 0
+
+  for (const session of loadStats().sessions) {
+    for (const record of session.sentences) {
+      if (record.skipped) continue
+      if (record.audioEnabled === undefined) {
+        unknown += 1
+        continue
+      }
+
+      const bucket = record.audioEnabled ? on : off
+      bucket.sentences += 1
+      bucket.activeMs += record.activeMs
+      bucket.keystrokes += record.keystrokes
+      bucket.correctKeystrokes += record.correctKeystrokes
+
+      if (record.audioEnabled) {
+        netOn += record.netWpm * record.activeMs
+        rawOn += record.rawWpm * record.activeMs
+      } else {
+        netOff += record.netWpm * record.activeMs
+        rawOff += record.rawWpm * record.activeMs
+      }
+    }
+  }
+
+  on.netWpm = on.activeMs > 0 ? netOn / on.activeMs : 0
+  on.rawWpm = on.activeMs > 0 ? rawOn / on.activeMs : 0
+  on.accuracy = on.keystrokes > 0 ? on.correctKeystrokes / on.keystrokes : 0
+  off.netWpm = off.activeMs > 0 ? netOff / off.activeMs : 0
+  off.rawWpm = off.activeMs > 0 ? rawOff / off.activeMs : 0
+  off.accuracy = off.keystrokes > 0 ? off.correctKeystrokes / off.keystrokes : 0
+
+  return { on, off, unknown }
 }
 
 function qualifiesForStreak(stat: DayStat | undefined): boolean {

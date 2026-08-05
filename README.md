@@ -102,6 +102,34 @@ import qilish yig'indilarni ikkilantirmasligi uchun.
 
 ---
 
+## ⭐ Audio tekshiruvi (M2/M3 gate)
+
+Matn ekranda **ko'rinib turadi**, ya'ni mashqni ovozsiz ham bajarish mumkin. Demak audio
+vazifa uchun majburiy emas — u faqat qo'shimcha. Loyihaning butun pedagogik da'vosi
+shu oqimning e'tiborga olinishiga tayanadi, va buni tekshirmasdan bilib bo'lmaydi.
+
+**Protokol:**
+
+1. Bir hafta davomida kunma-kun almashtiring: bir kun ovoz **yoqiq**, ertasi **o'chiq**.
+   Almashtirgich — mashq ekranidagi ovoz tugmasi.
+2. Har kuni **taxminan bir xil hajmda** matn tering (kamida 20 tadan gap kerak, aks holda
+   xulosa shovqin bo'ladi).
+3. Hafta oxirida **Statistika → "ovozli / ovozsiz taqqoslash"** bo'limiga qarang.
+
+**Qanday o'qish kerak:**
+
+| Natija | Ma'nosi |
+|---|---|
+| wpm va aniqlik farqi **sezilarli** | Audio qayta ishlanyapti — mexanika ishlayapti. |
+| farq **deyarli yo'q** | Audio e'tiborga olinmayapti. Yangi imkoniyat qurishdan oldin mexanikani qayta ko'rib chiqing. |
+| ovoz bilan **yomonroq** | Audio chalg'ityapti. Guard/tezlik sozlamalarini ko'ring. |
+
+Ovoz holati **gap darajasida** yoziladi, shuning uchun seans o'rtasida almashtirsangiz ham
+hisob to'g'ri qoladi. Bu maydon qo'shilishidan **oldingi** gaplarda holat noma'lum — ular
+taqqoslashdan chiqarib tashlanadi va bo'lim ostida alohida ko'rsatiladi.
+
+---
+
 ## Klaviatura
 
 | Tugma | Amal |

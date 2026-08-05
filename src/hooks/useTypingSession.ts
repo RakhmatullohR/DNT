@@ -195,6 +195,15 @@ export function useTypingSession(lesson: Lesson): TypingSession {
   const audioEpochRef = useRef<Map<number, number>>(new Map())
   /** Darsning qolgan qismi fonda BIR MARTA so'raladi (StrictMode effektni ikki marta yuritadi). */
   const bulkSynthRef = useRef(false)
+  /**
+   * Ovoz holatining REF nusxasi (PLAN §8, M2/M3 gate).
+   *
+   * `finishSentence` uni har gapda yozib qo'yadi. State to'g'ridan-to'g'ri
+   * o'qilsa, callback `audioEnabled` ga bog'lanib qolardi va u o'zgargan har
+   * safar `keydown` tinglovchisi qayta ulanardi — o'rtada bosilgan tugma
+   * yo'qolishi mumkin edi.
+   */
+  const audioEnabledRef = useRef(audioEnabled)
 
   // -------------------------------------------------------------------------
   // Audio
@@ -365,6 +374,10 @@ export function useTypingSession(lesson: Lesson): TypingSession {
         accuracy: metrics.accuracy,
         restarts: restartsRef.current,
         skipped,
+        // ⭐ M2/M3 gate (PLAN §8): ovozli va ovozsiz mashqni keyin taqqoslash
+        // uchun holat AYNAN GAP DARAJASIDA yoziladi — almashtirgich seans
+        // o'rtasida ham bosilishi mumkin.
+        audioEnabled: audioEnabledRef.current,
       })
 
       if (!skipped) {
@@ -515,6 +528,7 @@ export function useTypingSession(lesson: Lesson): TypingSession {
   }, [voice, rate])
 
   useEffect(() => {
+    audioEnabledRef.current = audioEnabled
     audioManager.setEnabled(audioEnabled)
     writeAudioEnabled(audioEnabled)
     if (!audioEnabled) return

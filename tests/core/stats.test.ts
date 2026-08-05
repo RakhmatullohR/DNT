@@ -10,6 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  audioComparison,
   clearStats,
   corruptStatsBackup,
   dailySeries,
@@ -1010,5 +1011,125 @@ describe('clearStats', () => {
     clearStats()
 
     expect(localStorage.getItem('dnt.lessons.v1')).toBe('[]')
+  })
+})
+
+describe('audioComparison — ⭐ M2/M3 gate (PLAN §8)', () => {
+  it("gaplarni ovoz holati bo'yicha ajratadi", () => {
+    recordSession(
+      makeSession({
+        sentences: [
+          makeSentence({ audioEnabled: true }),
+          makeSentence({ sentenceIndex: 1, audioEnabled: false }),
+          makeSentence({ sentenceIndex: 2, audioEnabled: false }),
+        ],
+      }),
+      {},
+    )
+
+    const result = audioComparison()
+    expect(result.on.sentences).toBe(1)
+    expect(result.off.sentences).toBe(2)
+    expect(result.unknown).toBe(0)
+  })
+
+  it("ovoz holati YOZILMAGAN eski gaplar taqqoslashga kirmaydi", () => {
+    recordSession(
+      makeSession({
+        sentences: [
+          makeSentence({ audioEnabled: true }),
+          makeSentence({ sentenceIndex: 1 }), // maydonsiz — eski yozuv
+        ],
+      }),
+      {},
+    )
+
+    const result = audioComparison()
+    expect(result.on.sentences).toBe(1)
+    // Eng muhimi: yo'q maydon "ovozsiz" ustuniga TUSHMAYDI.
+    expect(result.off.sentences).toBe(0)
+    expect(result.unknown).toBe(1)
+  })
+
+  it("`skipped` gap ikkala ustunga ham kirmaydi", () => {
+    recordSession(
+      makeSession({
+        sentences: [
+          makeSentence({ audioEnabled: true }),
+          makeSentence({ sentenceIndex: 1, audioEnabled: true, skipped: true }),
+        ],
+      }),
+      {},
+    )
+
+    expect(audioComparison().on.sentences).toBe(1)
+  })
+
+  it("wpm `activeMs` bo'yicha og'irlanadi — qisqa gap uzun gapga teng vazn olmaydi", () => {
+    recordSession(
+      makeSession({
+        sentences: [
+          makeSentence({ audioEnabled: true, activeMs: 60_000, netWpm: 24, rawWpm: 24 }),
+          makeSentence({
+            sentenceIndex: 1,
+            audioEnabled: true,
+            activeMs: 30_000,
+            netWpm: 18,
+            rawWpm: 24,
+            keystrokes: 60,
+            correctKeystrokes: 45,
+          }),
+        ],
+      }),
+      {},
+    )
+
+    const result = audioComparison()
+    // (24*60000 + 18*30000) / 90000 = 22 — sodda o'rtacha 21 bo'lardi.
+    expect(result.on.netWpm).toBe(22)
+    expect(result.on.accuracy).toBe(165 / 180)
+  })
+
+  it("bir nechta seansdagi gaplar yig'iladi", () => {
+    recordSession(
+      makeSession({ id: 's-1', sentences: [makeSentence({ audioEnabled: true })] }),
+      {},
+    )
+    recordSession(
+      makeSession({ id: 's-2', sentences: [makeSentence({ audioEnabled: true })] }),
+      {},
+    )
+
+    expect(audioComparison().on.sentences).toBe(2)
+  })
+
+  it("ma'lumot yo'q bo'lsa nollar qaytadi, xato bermaydi", () => {
+    const result = audioComparison()
+    expect(result.on.sentences).toBe(0)
+    expect(result.on.netWpm).toBe(0)
+    expect(result.on.accuracy).toBe(0)
+    expect(result.unknown).toBe(0)
+  })
+
+  it("eksport/import ovoz holatini saqlaydi", () => {
+    recordSession(
+      makeSession({
+        sentences: [
+          makeSentence({ audioEnabled: true }),
+          makeSentence({ sentenceIndex: 1, audioEnabled: false }),
+        ],
+      }),
+      {},
+    )
+    const dump = exportJson()
+    clearStats()
+    expect(audioComparison().on.sentences).toBe(0)
+
+    expect(importJson(dump)).toEqual({ ok: true })
+
+    const result = audioComparison()
+    expect(result.on.sentences).toBe(1)
+    expect(result.off.sentences).toBe(1)
+    expect(result.unknown).toBe(0)
   })
 })
