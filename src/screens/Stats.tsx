@@ -53,8 +53,14 @@ const LINK_PRIMARY = `${LINK_BTN} border-transparent bg-[#5ee6c1] text-[#04231c]
 /** Trend uchun tanlanadigan oraliqlar. */
 const RANGES = [14, 30] as const
 
-/** Ustunli grafikdagi so'zlar soni: `BarChart` shundan ortig'iga yorliq sig'dirolmaydi. */
-const WORD_BARS = 8
+/**
+ * Ustunli grafikdagi so'zlar soni: `BarChart` shundan ortig'iga yorliq
+ * sig'dirolmaydi. `BarChart.tsx` dagi `DENSE_LABEL_LIMIT` bilan BIR XIL bo'lishi
+ * kerak — undan oshsa grafik zich rejimga o'tadi va sakkizta so'z o'rniga atigi
+ * uchta yorliq (birinchi, o'rta, oxirgi) qoladi. Konteyner 1152px ga kengaygach
+ * ikkovi ham 8 dan 10 ga ko'tarildi; hisob o'sha konstanta izohida.
+ */
+const WORD_BARS = 10
 
 /** Ro'yxatda ko'rsatiladigan oxirgi seanslar soni. */
 const SESSION_ROWS = 12

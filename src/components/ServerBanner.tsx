@@ -94,7 +94,9 @@ export function ServerBanner() {
         shown ? 'translate-y-0 opacity-100' : '-translate-y-1 opacity-0',
       ].join(' ')}
     >
-      <div className="mx-auto flex w-full max-w-4xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 sm:px-5">
+      {/* `max-w-6xl` — `Layout.tsx` dagi `<main>` va header bilan bir xil bo'lishi
+          shart, aks holda ogohlantirish matni sahifa kontentidan siljib turadi. */}
+      <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 sm:px-5">
         <span
           aria-hidden="true"
           className={[

@@ -33,8 +33,21 @@ const BAR = '#5ee6c1'
 const VIEW_W = 100
 const VIEW_H = 40
 
-/** Ustunlar soni shundan oshsa har biriga yorliq sig'maydi — faqat uchtasi yoziladi. */
-const DENSE_LABEL_LIMIT = 8
+/**
+ * Ustunlar soni shundan oshsa har biriga yorliq sig'maydi — faqat uchtasi yoziladi.
+ *
+ * Son eng keng holatdan chiqarilgan: `Stats` paneli (`p-5 sm:p-6`) ichida grafik
+ * eni 1112 − 48 = 1064px; har yorliq `flex-1` + `px-0.5` (4px) va 11px monospace
+ * (~6.6px/belgi). 10 ta ustunda yorliqqa 102px ≈ 15 belgi qoladi, 11 tada 14 ga
+ * tushadi. Konteyner 896px bo'lganida shu hisob 8 ni bergan edi (808px panel,
+ * yorliqqa ~14.7 belgi) — ya'ni 10 eski sig'imni saqlaydi, kamaytirmaydi.
+ *
+ * DIQQAT: bu son EKRANGA QARAB o'zgarmaydi (komponentda hech qanday DOM o'lchash
+ * yo'q — bu ATAYIN). Telefonda panel ~303px, ya'ni 10 ta yorliqqa atigi ~4 belgi
+ * tegadi va ular `truncate` bilan qisqaradi; 8 tada ~5 belgi edi. Chegara keng
+ * ekran uchun tanlangan, tor ekranda yorliq baribir to'liq o'qilmaydi.
+ */
+const DENSE_LABEL_LIMIT = 10
 
 function roundTo2(n: number): number {
   return Math.round(n * 100) / 100

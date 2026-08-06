@@ -654,8 +654,14 @@ export function Home() {
         {/* Beshta ustun FAQAT `lg` dan boshlab: 640-1024px oralig'ida besh trek
             atigi ~118px bo'lib qolardi va uzun qiymat ("180 soat 05 daq" — bir
             yil kunlik mashqdan keyin real holat) unga sig'masdi. Oraliqda uchta
-            ustun ~213px beradi, `lg` da esa besh trek ~152px — eng uzun qiymatdan
-            ham keng. Tor ekranda ikkita ustun qoladi. */}
+            ustun ~213px beradi, `lg` da esa besh trek ~170-195px (1024px ekranda
+            170, konteyner o'z 1152px chegarasiga yetgach 195) — eng uzun
+            qiymatdan ham keng. Tor ekranda ikkita ustun qoladi.
+            Hisob: (panel eni − 4×gap-x-6) / 5, panel eni = kontent − shu
+            `<section>` ning `px-5` i. Ilgari bu yerda "~152px" turardi — u
+            ikki jihatdan eskirgan: konteyner hali 896px edi VA panelning
+            `px-5` i tushirib qoldirilgan edi (o'sha paytdagi haqiqiy trek
+            144px). */}
         <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 lg:grid-cols-5">
           {/* Tartib Stats.tsx bilan KANONIK: net wpm -> aniqlik -> seans -> faol
               vaqt -> seriya. Bir xil beshta raqam ikki ekranda boshqa tartibda

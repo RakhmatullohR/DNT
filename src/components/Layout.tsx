@@ -65,7 +65,7 @@ export function Layout() {
       </a>
 
       <header className="sticky top-0 z-20 border-b border-border bg-base/93 backdrop-blur-sm">
-        <div className="mx-auto flex w-full max-w-4xl items-center justify-between gap-4 px-4 sm:gap-6 sm:px-5">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 sm:gap-6 sm:px-5">
           <Link
             to="/"
             className="flex h-14 items-center gap-2 rounded-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-base"
@@ -134,10 +134,16 @@ export function Layout() {
           shart, aks holda `<main>` dasturiy fokus uchun yaroqsiz. `-1` hech
           narsani AVTOMATIK fokuslamaydi (Tab bilan aylanishda ham qatnashmaydi),
           faqat skip-link bosilganda brauzer uni fokuslay olishini ta'minlaydi. */}
+      {/* `max-w-6xl` (1152px) UCH JOYDA bir xil bo'lishi SHART: shu `<main>`,
+          yuqoridagi sticky header ichki qatori va `ServerBanner` ichki qatori.
+          Ular alohida DOM shoxlarida turadi, ya'ni faqat bittasi o'zgartirilsa
+          hech narsa buzilmaydi — logotip va navigatsiya sahifa kontentidan
+          ichkarida qolib ketadi, xolos. Kenglik: 1152 − 40 (sm:px-5) = 1112px
+          kontent. */}
       <main
         id="asosiy"
         tabIndex={-1}
-        className="mx-auto w-full max-w-4xl flex-1 px-4 pt-8 pb-20 sm:px-5"
+        className="mx-auto w-full max-w-6xl flex-1 px-4 pt-8 pb-20 sm:px-5"
       >
         <Outlet />
       </main>

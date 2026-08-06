@@ -379,7 +379,7 @@ function Session({ lesson }: { lesson: Lesson }) {
   }, [])
 
   return (
-    // Tashqi o'ram `Layout` ning 896px ini oladi: `max-w-3xl` bu yerda turganda
+    // Tashqi o'ram `Layout` ning 1152px ini oladi: `max-w-5xl` bu yerda turganda
     // navigatsiyaning o'ng chekkasi mashq kontentidan 64px o'ngda qolardi.
     // Tor o'qish ustuni faqat mashq matni panelida — u yerda ataylab qilingan
     // ierarxiya signali, bu yerda esa tekislanmagan chekka edi.
@@ -490,7 +490,7 @@ function Session({ lesson }: { lesson: Lesson }) {
         tabIndex={0}
         role="region"
         aria-label="Yozuv maydoni"
-        className={`${PANEL} mx-auto mt-4 max-w-3xl p-6 focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f14] focus-visible:outline-none sm:p-8`}
+        className={`${PANEL} mx-auto mt-4 max-w-5xl p-6 focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f14] focus-visible:outline-none sm:p-8`}
       >
         <Sentence
           state={state}
