@@ -184,8 +184,13 @@ function changeFromLabel(change: NormalizeChange): string {
   return `${shown}  ${codePointList(change.from)}`
 }
 
-const PANEL = 'rounded-lg border border-[#1d2833] bg-[#0d131a]'
-const CAPTION = "text-[11px] font-medium uppercase tracking-[0.22em] text-[#7d8fa1]"
+// `rounded-control` (4px), `rounded-panel` (8px) EMAS: bu quti hech qachon yolg'iz
+// turmaydi — u Import ekranidagi "normalizatsiya" kartasi ICHIDA chiziladi, karta esa
+// o'zi `rounded-panel`. Ikkalasi bir xil radiusda bo'lsa ichma-ichlik ko'rinmay qoladi.
+// index.css dagi `--radius-control` ta'rifi ham "kichik quyi panel/dialog" ni o'z ichiga
+// oladi; Home.tsx dagi ovoz va tasdiq panellari ham aynan shu sababdan 4px.
+const PANEL = 'rounded-control border border-[#1d2833] bg-[#0d131a]'
+const CAPTION = "text-[11px] font-medium uppercase tracking-[0.22em] text-muted"
 
 type PaneProps = {
   caption: string
@@ -291,7 +296,7 @@ export function NormalizeDiff({ original, result }: NormalizeDiffProps): ReactEl
                 <span className="w-24 shrink-0 truncate text-[#5ad1a5]">
                   {change.to === '' ? "o'chirildi" : `"${change.to}"`}
                 </span>
-                <span className="w-12 shrink-0 text-right tabular-nums text-[#7d8fa1]">
+                <span className="w-12 shrink-0 text-right tabular-nums text-muted">
                   {change.count}&times;
                 </span>
               </li>
@@ -308,7 +313,7 @@ export function NormalizeDiff({ original, result }: NormalizeDiffProps): ReactEl
               {result.removed.length} xil
             </span>
           </div>
-          <p className="mb-3 text-[11px] leading-relaxed text-[#7d8fa1]">
+          <p className="mb-3 text-[11px] leading-relaxed text-muted">
             Bu belgilar klaviaturada terilmaydi, shuning uchun mashq matnidan chiqarildi. Ular
             bo'lmaganda kursor birinchi shunday belgida qotib qolardi va gap hech qachon
             tugamasdi.
@@ -317,10 +322,10 @@ export function NormalizeDiff({ original, result }: NormalizeDiffProps): ReactEl
             {result.removed.map((ch) => (
               <li
                 key={ch}
-                className="flex items-center gap-2 rounded border border-[#ef6f6c]/30 bg-[#ef6f6c]/10 px-2 py-1 text-[11px]"
+                className="flex items-center gap-2 rounded-control border border-[#ef6f6c]/30 bg-[#ef6f6c]/10 px-2 py-1 text-[11px]"
               >
                 <span className="text-[#ff9f9c]">{displayText(ch)}</span>
-                <span className="tabular-nums text-[#7d8fa1]">{codePointLabel(ch)}</span>
+                <span className="tabular-nums text-muted">{codePointLabel(ch)}</span>
               </li>
             ))}
           </ul>

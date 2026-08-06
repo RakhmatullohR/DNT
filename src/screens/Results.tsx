@@ -18,10 +18,10 @@ import { getSession, hardestWords } from '../store/stats.ts'
 import type { SessionRecord } from '../store/stats.ts'
 import { Sparkline } from '../components/Sparkline.tsx'
 
-const PANEL = 'rounded-2xl border border-white/[0.07] bg-[#0e141c]'
+const PANEL = 'rounded-panel border border-white/[0.07] bg-[#0e141c]'
 const LABEL = 'font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-[#7d8b9c]'
 const BTN_BASE =
-  'inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 font-mono text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2'
+  'inline-flex items-center justify-center gap-2 rounded-control px-5 py-2.5 font-mono text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2'
 const BTN_PRIMARY = `${BTN_BASE} bg-[#5ee6c1] text-[#04231c] hover:bg-[#7cf0d3] focus-visible:outline-[#5ee6c1]`
 const BTN_GHOST = `${BTN_BASE} border border-white/10 bg-white/[0.03] text-[#e6edf3] hover:border-white/20 hover:bg-white/[0.06] focus-visible:outline-[#5ee6c1]`
 

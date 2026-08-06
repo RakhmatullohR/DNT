@@ -18,7 +18,7 @@ export type ButtonProps = {
 
 /** Barcha variantlar uchun umumiy asos: fokus halqasi, bosish javobi, o'chirilgan holat. */
 const BASE = [
-  'inline-flex items-center justify-center gap-2 rounded-sm',
+  'inline-flex items-center justify-center gap-2 rounded-control',
   'font-mono font-medium whitespace-nowrap select-none',
   'border transition-colors duration-150 ease-out',
   'active:translate-y-px',

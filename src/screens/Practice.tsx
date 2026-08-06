@@ -17,10 +17,15 @@ import { useTypingSession } from '../hooks/useTypingSession.ts'
 import type { Lesson } from '../store/lessons.ts'
 import { getLesson } from '../store/lessons.ts'
 
-const PANEL = 'rounded-sm border border-[#1d2833] bg-[#0e141c]'
+// Karta radiusi `--radius-panel` tokenidan keladi (index.css): mashq ekranining
+// paneli boshqa ekranlardagi karta bilan BIR XIL shaklda bo'lishi kerak, aks
+// holda bitta ilova ichida ikki xil karta oilasi paydo bo'ladi. Ichkaridagi
+// chip va tugmalar esa o'tkirroq (4px) qoladi — bu ATAYIN: boshqaruv elementi
+// konteynerdan o'tkirroq bo'lsa "asbob paneli" hissi saqlanadi.
+const PANEL = 'rounded-panel border border-[#1d2833] bg-[#0e141c]'
 const LABEL = 'font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-[#7d8b9c]'
 const KBD =
-  'rounded-sm border border-[#22303d] bg-[#131b23] px-1.5 py-0.5 font-mono text-[11px] text-[#c6d3de]'
+  'rounded-control border border-[#22303d] bg-[#131b23] px-1.5 py-0.5 font-mono text-[11px] text-[#c6d3de]'
 /**
  * `Link` tugma ko'rinishida — `Button.tsx` faqat `<button>` chiqaradi.
  *
@@ -29,7 +34,7 @@ const KBD =
  * ostidan qorong'i chok bo'lib chiqardi.
  */
 const LINK_BTN_BASE =
-  'inline-flex h-10 items-center justify-center rounded-sm border px-4 font-mono text-[13px] font-medium transition-colors duration-150 ease-out focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0e141c] focus-visible:outline-none'
+  'inline-flex h-10 items-center justify-center rounded-control border px-4 font-mono text-[13px] font-medium transition-colors duration-150 ease-out focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0e141c] focus-visible:outline-none'
 const LINK_BTN_PRIMARY = `${LINK_BTN_BASE} border-transparent bg-[#5ee6c1] text-[#04231c] hover:bg-[#7cf0d3]`
 const LINK_BTN_GHOST = `${LINK_BTN_BASE} border-[#22303d] text-[#c6d3de] hover:border-[#334556] hover:bg-[#131b23] hover:text-[#e6edf3]`
 
@@ -154,7 +159,7 @@ function BlockedHint({ blocked, expected }: { blocked: BlockedKey; expected: str
   return (
     <div
       className={[
-        'flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-sm border border-[#ff6b6b]/40 px-4 py-3',
+        'flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-control border border-[#ff6b6b]/40 px-4 py-3',
         'origin-left transition-all duration-300 ease-out motion-reduce:transition-none',
         settled ? 'scale-100 bg-[#ff6b6b]/[0.07]' : 'scale-[1.02] bg-[#ff6b6b]/25',
       ].join(' ')}
@@ -435,7 +440,7 @@ function Session({ lesson }: { lesson: Lesson }) {
           shuning uchun 54px faqat `sm` dan boshlab yetarli. */}
       <div role="status" aria-live="polite" className="mt-3 min-h-23 sm:min-h-13.5">
         {awaitingNext ? (
-          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-sm border border-[#5ee6c1]/40 bg-[#5ee6c1]/[0.07] px-4 py-3">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-control border border-[#5ee6c1]/40 bg-[#5ee6c1]/[0.07] px-4 py-3">
             <span
               aria-hidden="true"
               className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[#5ee6c1] motion-reduce:animate-none"
@@ -479,7 +484,7 @@ function Session({ lesson }: { lesson: Lesson }) {
           {/* Umumiy `ServerBanner` ulanish yo'qligini aytadi; bu belgi esa
               ayni damda QAYSI ovoz eshitilayotganini tugmaning yonida ko'rsatadi. */}
           {session.audioEnabled && !session.serverOk ? (
-            <span className="rounded-sm border border-[#3a2c12] bg-[#151007] px-2 py-1 font-mono text-[11px] text-[#e0cfa8]">
+            <span className="rounded-control border border-[#3a2c12] bg-[#151007] px-2 py-1 font-mono text-[11px] text-[#e0cfa8]">
               zaxira: brauzer ovozi
             </span>
           ) : null}

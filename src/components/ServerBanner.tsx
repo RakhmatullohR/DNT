@@ -97,7 +97,10 @@ export function ServerBanner() {
           aria-hidden="true"
           className={[
             'h-1.5 w-1.5 shrink-0 rounded-full bg-[#f2b344]',
-            exhausted ? '' : 'animate-pulse',
+            // `motion-reduce:animate-none` — Layout.tsx dagi kursor bilan bir xil
+            // sabab: cheksiz `animate-pulse` harakatni kamaytirish so'ralganda
+            // to'xtashi kerak (Practice.tsx dagi indikator ham shu qoidaga amal qiladi).
+            exhausted ? '' : 'animate-pulse motion-reduce:animate-none',
           ].join(' ')}
         />
         <span className="font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-[#f2b344]">

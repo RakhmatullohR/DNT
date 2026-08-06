@@ -14,13 +14,13 @@ import { deleteLesson, getLesson, listLessons, saveLesson, setProgress } from '.
 import type { Lesson } from '../store/lessons.ts'
 import { streakDays, totals } from '../store/stats.ts'
 
-const PANEL = 'rounded-2xl border border-white/[0.07] bg-[#0e141c]'
-const LABEL = 'font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-[#7d8b9c]'
+const PANEL = 'rounded-panel border border-white/[0.07] bg-[#0e141c]'
+const LABEL = 'font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-muted'
 // Maydon uslubi `Import.tsx` dagi bilan bir xil: ikkala ekranda ham AYNAN shu
 // ikki ro'yxat tanlanadi, ko'rinishi ham farq qilmasligi kerak.
 const FIELD = [
-  'w-full rounded-lg border border-white/[0.07] bg-[#0b1219] px-3 py-2.5',
-  'font-mono text-[13px] text-[#e6edf3] placeholder:text-[#7d8b9c]',
+  'w-full rounded-control border border-white/[0.07] bg-[#0b1219] px-3 py-2.5',
+  'font-mono text-[13px] text-[#e6edf3] placeholder:text-muted',
   'transition-colors duration-150 ease-out hover:border-white/[0.12]',
   'focus:border-[#5ee6c1] focus:outline-none',
   'focus-visible:ring-2 focus-visible:ring-[#5ee6c1]',
@@ -30,7 +30,7 @@ const FIELD = [
 // bo'lmaydi, shuning uchun navigatsiya uchun `Link` o'z sinflarini oladi.
 // Ko'rinish `Button.tsx` dagi `md` o'lchami bilan bir xil qilib olingan.
 const LINK_BTN =
-  'inline-flex h-10 items-center justify-center gap-2 rounded-sm border px-4 font-mono text-[13px] font-medium whitespace-nowrap transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f14]'
+  'inline-flex h-10 items-center justify-center gap-2 rounded-control border px-4 font-mono text-[13px] font-medium whitespace-nowrap transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f14]'
 const LINK_PRIMARY = `${LINK_BTN} border-transparent bg-[#5ee6c1] text-[#04231c] hover:bg-[#7cf0d3]`
 
 // ---------------------------------------------------------------------------
@@ -140,16 +140,63 @@ function readSummary(): Summary {
   return { ...totals(), streak: streakDays() }
 }
 
+/** Uzilmas bo'shliq — son bilan uning birligini bir-biridan ajratmaydi. */
+const NBSP = ' '
+
+/**
+ * Qiymatni raqam va birlik bo'laklariga ajratib chiqaradi ("29 daq 25 sek" ->
+ * "29" / " daq " / "25" / " sek"). Bu FAQAT ko'rinish — `formatDuration`
+ * va boshqa formatlovchilar o'zgarmaydi, hisoblash aynan ular bergan satrga
+ * tayanadi.
+ *
+ * Ikki qaror bu yerda ATAYIN shunday:
+ *
+ * 1. Bo'sh joylar birlik bo'lagi ICHIDA qoladi (CSS `gap` bilan emas): aks holda
+ *    ekran o'quvchi matnni bo'shliqsiz "29daq25sek" deb o'qib berardi.
+ *
+ * 2. Birlikning OLDIDAGI bo'shliq uzilmas (` `), ORQASIDAGISI esa oddiy
+ *    bo'shliq bo'lib qoladi. Shu sabab satr faqat "...daq" va "25" orasidan
+ *    uzilishi mumkin, "29" bilan "daq" orasidan esa hech qachon.
+ *
+ *    Nega `whitespace-nowrap` emas: u sinishni butunlay taqiqlaydi, lekin
+ *    TOSHISHNI to'xtatmaydi — panjara treki tor bo'lganda qiymat o'z ustunidan
+ *    chiqib qo'shni statistika ustiga bosib ketardi (768px va 320px da o'lchab
+ *    ko'rilgan: +25px gacha). Toshish o'qib bo'lmaydigan holat, sinish esa —
+ *    shunchaki notekis. Shuning uchun eng yomon holatda sinishga RUXSAT beriladi.
+ *
+ * Birlik (daq, sek, soat, kun, %) ikkinchi darajali ma'lumot bo'lgani uchun
+ * kichikroq va xiraroq chiqadi — bu ham qiymatni toraytiradi, ham son/birlik
+ * ierarxiyasini ko'rsatadi.
+ */
+function statTokens(value: string): { text: string; unit: boolean }[] {
+  const parts = value.match(/\d[\d.]*|[^\d]+/g) ?? [value]
+  return parts.map((part) => {
+    // Birlik = ichida BIRORTA raqam yo'q bo'lak. `\D` bilan tekshirib bo'lmaydi:
+    // "94.5" ichidagi nuqta ham `\D` ga mos keladi va butun son birlik bo'lib,
+    // kichkina va xira chiqib ketardi.
+    if (/\d/.test(part)) return { text: part, unit: false }
+    // Faqat BOSHIDAGI bo'shliqlar uzilmas bo'ladi; oxiridagilar guruhlar
+    // orasidagi yagona ruxsat etilgan uzilish nuqtasi bo'lib qoladi.
+    return { text: part.replace(/^\s+/, (run) => NBSP.repeat(run.length)), unit: true }
+  })
+}
+
 function Stat({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div>
+    <div className="min-w-0">
       <dt className={LABEL}>{label}</dt>
-      <dd
-        className={`mt-1.5 font-mono text-[21px] font-semibold tabular-nums ${
-          accent ? 'text-[#5ee6c1]' : 'text-[#e6edf3]'
-        }`}
-      >
-        {value}
+      <dd className="mt-1.5 font-mono text-[21px] font-semibold">
+        {statTokens(value).map((token, index) =>
+          token.unit ? (
+            <span key={index} className="text-[12px] font-medium text-muted">
+              {token.text}
+            </span>
+          ) : (
+            <span key={index} className={`tabular-nums ${accent ? 'text-[#5ee6c1]' : 'text-[#e6edf3]'}`}>
+              {token.text}
+            </span>
+          ),
+        )}
       </dd>
     </div>
   )
@@ -204,11 +251,13 @@ function LessonCard({
   const voice = VOICES.includes(lesson.voice) ? lesson.voice : DEFAULT_VOICE
   const rate = RATES.includes(lesson.rate) ? lesson.rate : DEFAULT_RATE
 
-  const status = finished
+  // Holat yorlig'i progress blokining o'ng ustunida chiqadi — chapdagi
+  // son/foiz bilan bitta qatorda, alohida "status satri" sifatida emas.
+  const stateLabel = finished
     ? 'tugallangan'
     : done === 0
       ? 'boshlanmagan'
-      : `${Math.round(percent)}% — keyingi gap: ${done + 1}`
+      : `keyingi: ${done + 1}-gap`
 
   // Panel yopilganda fokuslangan "Bekor qilish" yo'qoladi, fokus esa <body> ga
   // tushib ketardi — shuning uchun u ochilishni SO'RAGAN tugmaga qaytariladi
@@ -220,42 +269,68 @@ function LessonCard({
 
   return (
     <li className={`${PANEL} p-5`}>
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-        <h2 className="min-w-0 truncate font-mono text-[16px] font-medium text-[#e6edf3]">
-          {title}
-        </h2>
-        <span className="shrink-0 font-mono text-[11px] tabular-nums text-[#7d8b9c]">
-          {done} / {total} gap
-        </span>
-      </div>
-
-      <p className="mt-1.5 font-mono text-[11px] tabular-nums text-[#7d8b9c]">
+      <h2 className="truncate font-mono text-[16px] font-medium text-[#e6edf3]">{title}</h2>
+      {/* Sana meta-matn sifatida sarlavhaga TIQ turadi (kichik bo'shliq) — ilgari
+          bu ikkovi bir xil xira rangdagi ikkita bog'liqsiz qatorga o'xshab
+          ko'rinardi. Gap soni endi shu yerda emas, progress blokida: u foiz va
+          keyingi gap bilan birga BITTA joyda o'qiladi, uch marta qaytarilmaydi. */}
+      <p className="mt-0.5 font-mono text-[11px] tabular-nums text-muted">
         {formatDate(lesson.createdAt)}
       </p>
 
+      {/* Progress — BITTA blok: chapda son/foiz, o'ngda holat, tagida yo'lak.
+          Ilgari bu uch alohida parcha edi (sarlavhadagi son, yalang'och yo'lak,
+          pastdagi status satri) va ikkinchisi birinchisini boshqa shaklda
+          qaytarardi. Yo'lak balandligi ham sal oshirildi (h-1 -> h-1.5): sarlavha
+          bilan tegishmasa, 7% kabi kichik to'ldirish "chang zarrasi"dek ko'rinardi. */}
       <div className="mt-4">
-        <div className="h-1 w-full overflow-hidden rounded-full bg-white/[0.05]">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <span className="font-mono text-[11px] tabular-nums text-muted">
+            {done} / {total} gap · {Math.round(percent)}%
+          </span>
+          {/* Tugallanganda ham na'na rangga bo'yalmaydi: shu kartada allaqachon
+              to'la yo'lak va yashil "Qaytadan" tugmasi bor, uchinchi na'na yuza
+              qo'shilsa aksent "bosiladigan narsa" ma'nosini yo'qotadi (Layout.tsx:
+              aksent faqat faol holat va bitta asosiy harakat uchun). Tugallanganini
+              chapdagi "149 / 149 gap · 100%" va to'la yo'lakning o'zi aytib turadi. */}
+          <span className="font-mono text-[11px] text-muted">{stateLabel}</span>
+        </div>
+        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/[0.05]">
           <div
             className="h-full rounded-full bg-[#5ee6c1] transition-[width] duration-300 ease-out motion-reduce:transition-none"
             style={{ width: `${percent}%` }}
           />
         </div>
-        <p className="mt-2 font-mono text-[11px] text-[#7d8b9c]">{status}</p>
       </div>
 
       {/* Tugmalar qatori HAR DOIM turadi. Uni tasdiq paneli bilan almashtirish
           fokuslangan tugmani yo'q qilardi va klaviatura foydalanuvchisi fokusni
           sahifa boshidan qaytib topishga majbur bo'lardi (`Stats.tsx` shu
-          sababdan panelni qatorning USTIGA emas, TAGIGA qo'yadi). */}
-      <div className="mt-4 flex flex-wrap gap-2">
+          sababdan panelni qatorning USTIGA emas, TAGIGA qo'yadi).
+
+          Og'irlik ATAYIN teng emas: ikkilamchi uchtasi `sm` o'lchamda, shuning
+          uchun yashil asosiy harakat qatorda yolg'iz kattaroq bo'lib ajralib
+          turadi.
+
+          O'chirish esa alohida o'ram ichida: buzuvchi harakat "Ovoz va tezlik"
+          bilan yelka-yelkama turmasligi kerak, aks holda bitta adashgan bosish
+          darsni yo'q qilib yuboradi. Yolg'iz `ml-auto` bunga YETMAYDI — u faqat
+          ORTIB QOLGAN bo'shliqni yeydi, 320px da esa qator o'ralib, oxirgi
+          satrda atigi 14px qolardi (o'lchab ko'rilgan), ya'ni ajratish aynan eng
+          tor ekranda — xato bosish ehtimoli eng yuqori joyda — yo'qolardi.
+          Shuning uchun `sm` gacha o'ram `basis-full` bilan butun satrni egallaydi
+          va tugma o'ng chetga o'tadi; `sm` dan boshlab esa `ml-auto` yetarli
+          bo'shliq beradi. Tab tartibi DOM bo'yicha bir xil qoladi. */}
+      <div className="mt-4 flex flex-wrap items-center gap-2">
         <Link to={`/practice/${encodeURIComponent(lesson.id)}`} className={LINK_PRIMARY}>
           {finished ? 'Qaytadan' : done === 0 ? 'Boshlash' : 'Davom ettirish'}
         </Link>
-        <Button variant="ghost" onClick={onRestart} disabled={done === 0}>
+        <Button variant="ghost" size="sm" onClick={onRestart} disabled={done === 0}>
           Boshidan
         </Button>
         <Button
           variant="ghost"
+          size="sm"
           onClick={() => downloadSentences(lesson)}
           disabled={total === 0}
           title="Gaplarni tashqi tts.sh quvuri uchun .txt fayl qilib yuklab olish"
@@ -264,21 +339,25 @@ function LessonCard({
         </Button>
         <Button
           variant="ghost"
+          size="sm"
           onClick={() => setAudioOpen((open) => !open)}
           aria-expanded={audioOpen}
           aria-controls={audioOpen ? audioPanelId : undefined}
         >
           Ovoz va tezlik
         </Button>
-        <Button
-          id={deleteId}
-          variant="danger"
-          onClick={onAskDelete}
-          aria-expanded={confirming}
-          aria-controls={confirming ? confirmPanelId : undefined}
-        >
-          O&apos;chirish
-        </Button>
+        <div className="flex basis-full justify-end sm:ml-auto sm:basis-auto">
+          <Button
+            id={deleteId}
+            variant="danger"
+            size="sm"
+            onClick={onAskDelete}
+            aria-expanded={confirming}
+            aria-controls={confirming ? confirmPanelId : undefined}
+          >
+            O&apos;chirish
+          </Button>
+        </div>
       </div>
 
       {/* Ovoz/tezlik muharriri (PLAN §8 M5). Ro'yxatlar `shared/filename.ts` dan
@@ -287,7 +366,7 @@ function LessonCard({
       {audioOpen ? (
         <div
           id={audioPanelId}
-          className="mt-4 rounded-sm border border-white/[0.07] bg-[#0b1219] p-4"
+          className="mt-4 rounded-control border border-white/[0.07] bg-[#0b1219] p-4"
         >
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
@@ -331,7 +410,7 @@ function LessonCard({
               </select>
             </div>
           </div>
-          <p className="mt-3 font-mono text-[11px] leading-relaxed text-[#7d8b9c]">
+          <p className="mt-3 font-mono text-[11px] leading-relaxed text-muted">
             O&apos;zgarish darhol saqlanadi. Audio fayl nomi ovoz va tezlikdan hosil
             bo&apos;lgani uchun tayyorlangan kesh bu darsga endi to&apos;g&apos;ri kelmaydi —
             so&apos;zlar keyingi mashqda qaytadan sintez qilinadi. Davom ettirish nuqtasi va
@@ -346,7 +425,7 @@ function LessonCard({
           role="alertdialog"
           aria-live="assertive"
           aria-labelledby={confirmTextId}
-          className="mt-4 rounded-sm border border-[#452027] bg-[#160f12] p-4"
+          className="mt-4 rounded-control border border-[#452027] bg-[#160f12] p-4"
         >
           <p
             id={confirmTextId}
@@ -437,13 +516,18 @@ export function Home() {
           <span className={LABEL}>umumiy holat</span>
           <Link
             to="/stats"
-            className="font-mono text-[11px] text-[#7d8b9c] underline decoration-white/20 underline-offset-4 transition-colors hover:text-[#e6edf3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ee6c1]"
+            className="font-mono text-[11px] text-muted underline decoration-white/20 underline-offset-4 transition-colors hover:text-[#e6edf3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ee6c1]"
           >
             Batafsil
           </Link>
         </div>
 
-        <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-5">
+        {/* Beshta ustun FAQAT `lg` dan boshlab: 640-1024px oralig'ida besh trek
+            atigi ~118px bo'lib qolardi va uzun qiymat ("180 soat 05 daq" — bir
+            yil kunlik mashqdan keyin real holat) unga sig'masdi. Oraliqda uchta
+            ustun ~213px beradi, `lg` da esa besh trek ~152px — eng uzun qiymatdan
+            ham keng. Tor ekranda ikkita ustun qoladi. */}
+        <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 lg:grid-cols-5">
           <Stat label="seans" value={String(summary.sessions)} />
           <Stat label="faol vaqt" value={formatDuration(summary.activeMs)} />
           <Stat label="net wpm" value={formatWpm(summary.netWpm)} accent />
@@ -485,29 +569,34 @@ export function Home() {
             }
           />
         ) : (
-          <ul className="space-y-3">
-            {lessons.map((lesson) => (
-              <LessonCard
-                key={lesson.id}
-                lesson={lesson}
-                confirming={confirmId === lesson.id}
-                onRestart={() => handleRestart(lesson.id)}
-                onAskDelete={() => setConfirmId(lesson.id)}
-                onCancelDelete={() => setConfirmId(null)}
-                onConfirmDelete={() => handleDelete(lesson.id)}
-                onAudioChange={(voice, rate) => handleAudio(lesson.id, voice, rate)}
-              />
-            ))}
-          </ul>
+          <>
+            <ul className="space-y-3">
+              {lessons.map((lesson) => (
+                <LessonCard
+                  key={lesson.id}
+                  lesson={lesson}
+                  confirming={confirmId === lesson.id}
+                  onRestart={() => handleRestart(lesson.id)}
+                  onAskDelete={() => setConfirmId(lesson.id)}
+                  onCancelDelete={() => setConfirmId(null)}
+                  onConfirmDelete={() => handleDelete(lesson.id)}
+                  onAudioChange={(voice, rate) => handleAudio(lesson.id, voice, rate)}
+                />
+              ))}
+            </ul>
+
+            {/* Izoh ro'yxatga chegara chizig'i bilan "yopishtiriladi" — `Stats.tsx`
+                dagi izoh bandlarining o'zi ham xuddi shu tarzda (`border-t` +
+                `pt-4`) o'z bo'limiga ankerlangan. Ilgari bu xatboshi bo'lim
+                tugagach erkin osilib qolardi va tasodifiy qoldiq matnga
+                o'xshab ko'rinardi. */}
+            <p className="mt-6 border-t border-white/[0.06] pt-4 font-mono text-[11px] leading-relaxed text-muted">
+              Davom ettirish gap darajasida ishlaydi: yarim yozilgan gap saqlanmaydi, mashq doim
+              gap boshidan tiklanadi.
+            </p>
+          </>
         )}
       </section>
-
-      {lessons.length > 0 ? (
-        <p className="font-mono text-[11px] leading-relaxed text-[#7d8b9c]">
-          Davom ettirish gap darajasida ishlaydi: yarim yozilgan gap saqlanmaydi, mashq doim
-          gap boshidan tiklanadi.
-        </p>
-      ) : null}
     </div>
   )
 }

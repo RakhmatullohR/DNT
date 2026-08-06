@@ -22,10 +22,10 @@ import { tokenize } from '../core/tokenize.ts'
 import { listLessons, newLessonId, saveLesson } from '../store/lessons.ts'
 import type { Lesson } from '../store/lessons.ts'
 
-const PANEL = 'rounded-2xl border border-white/[0.07] bg-[#0e141c]'
+const PANEL = 'rounded-panel border border-white/[0.07] bg-[#0e141c]'
 const LABEL = 'font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-[#7d8b9c]'
 const FIELD = [
-  'w-full rounded-lg border border-white/[0.07] bg-[#0b1219] px-3 py-2.5',
+  'w-full rounded-control border border-white/[0.07] bg-[#0b1219] px-3 py-2.5',
   'font-mono text-[13px] text-[#e6edf3] placeholder:text-[#7d8b9c]',
   'transition-colors duration-150 ease-out hover:border-white/[0.12]',
   'focus:border-[#5ee6c1] focus:outline-none',
@@ -450,7 +450,7 @@ export function Import() {
 
       {/* --- Limitdan oshgan holat: import bloklanadi --- */}
       {overLimit ? (
-        <section className="mt-4 rounded-2xl border border-[#452027] bg-[#160f12] p-5">
+        <section className="mt-4 rounded-panel border border-[#452027] bg-[#160f12] p-5">
           <div className={`${LABEL} text-[#ff7b7b]`}>limitdan oshdi</div>
           <p className="mt-2 text-[13px] leading-relaxed text-[#e0b7b7]">
             Bitta darsga eng ko&apos;pi {MAX_WORDS} so&apos;z sig&apos;adi, matnda esa{' '}
@@ -482,7 +482,7 @@ export function Import() {
           </div>
 
           {longRows.length > 0 ? (
-            <div className="mt-4 rounded-lg border border-[#3a2c12] bg-[#151007] px-4 py-3">
+            <div className="mt-4 rounded-control border border-[#3a2c12] bg-[#151007] px-4 py-3">
               <p className="font-mono text-[13px] leading-relaxed text-[#e0cfa8]">
                 <span className="tabular-nums">{longRows.length}</span> ta gap{' '}
                 {LONG_SENTENCE_WORDS} so&apos;zdan uzun. Uzun gapni bir urinishda xatosiz terish
@@ -512,7 +512,7 @@ export function Import() {
                 return (
                   <li
                     key={`${row.index}|${row.text}`}
-                    className={`rounded-lg border px-3 py-2.5 ${
+                    className={`rounded-control border px-3 py-2.5 ${
                       isLong
                         ? 'border-[#3a2c12] bg-[#12100a]'
                         : 'border-white/[0.05] bg-white/[0.015]'
@@ -596,7 +596,7 @@ export function Import() {
 
       {/* --- Sintez va harakat --- */}
       {phase.kind === 'saved' ? (
-        <section className="mt-4 rounded-2xl border border-[#3a2c12] bg-[#151007] p-5">
+        <section className="mt-4 rounded-panel border border-[#3a2c12] bg-[#151007] p-5">
           <div className={`${LABEL} text-[#f2b344]`}>ogohlantirish</div>
           <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-[#e0cfa8]">
             {phase.warning}

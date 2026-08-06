@@ -41,12 +41,12 @@ import {
 } from '../store/stats.ts'
 import type { AudioBucket, AudioComparison, StatsData } from '../store/stats.ts'
 
-const PANEL = 'rounded-2xl border border-white/[0.07] bg-[#0e141c]'
+const PANEL = 'rounded-panel border border-white/[0.07] bg-[#0e141c]'
 const LABEL = 'font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-[#7d8b9c]'
 const NOTE = 'font-mono text-[11px] leading-relaxed text-[#7d8b9c]'
 
 const LINK_BTN =
-  'inline-flex h-10 items-center justify-center gap-2 rounded-sm border px-4 font-mono text-[13px] font-medium whitespace-nowrap transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f14]'
+  'inline-flex h-10 items-center justify-center gap-2 rounded-control border px-4 font-mono text-[13px] font-medium whitespace-nowrap transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f14]'
 const LINK_PRIMARY = `${LINK_BTN} border-transparent bg-[#5ee6c1] text-[#04231c] hover:bg-[#7cf0d3]`
 
 /** Trend uchun tanlanadigan oraliqlar. */
@@ -232,7 +232,7 @@ const GATE_MIN_SENTENCES = 20
 
 function GateColumn({ title, bucket, accent }: { title: string; bucket: AudioBucket; accent: string }) {
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-[#0b1118] p-4">
+    <div className="rounded-control border border-white/[0.06] bg-[#0b1118] p-4">
       <div className="flex items-baseline justify-between gap-2">
         <span className="font-mono text-[11px] text-[#7d8b9c]">{title}</span>
         <span className="font-mono text-[11px] tabular-nums text-[#7d8b9c]">
@@ -393,7 +393,7 @@ export function Stats() {
           <section className={`${PANEL} p-5 sm:p-6`}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className={LABEL}>kunlik trend</h2>
-              <div className="flex items-center gap-1 rounded-sm border border-[#22303d] p-0.5">
+              <div className="flex items-center gap-1 rounded-control border border-[#22303d] p-0.5">
                 {RANGES.map((days) => (
                   <button
                     key={days}
@@ -525,13 +525,13 @@ export function Stats() {
               </p>
             ) : (
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-xl border border-white/[0.06] bg-[#0b1118] p-4">
+                <div className="rounded-control border border-white/[0.06] bg-[#0b1118] p-4">
                   <div className="font-mono text-[11px] text-[#7d8b9c]">wpm farqi</div>
                   <div className="mt-2 font-mono text-[16px] font-medium tabular-nums text-[#e6edf3]">
                     {formatWpmDelta(snapshot.audio.on.netWpm - snapshot.audio.off.netWpm)}
                   </div>
                 </div>
-                <div className="rounded-xl border border-white/[0.06] bg-[#0b1118] p-4">
+                <div className="rounded-control border border-white/[0.06] bg-[#0b1118] p-4">
                   <div className="font-mono text-[11px] text-[#7d8b9c]">aniqlik farqi</div>
                   <div className="mt-2 font-mono text-[16px] font-medium tabular-nums text-[#e6edf3]">
                     {formatPercentDelta(snapshot.audio.on.accuracy - snapshot.audio.off.accuracy)}
@@ -566,7 +566,7 @@ export function Stats() {
                   <li key={session.id}>
                     <Link
                       to={`/results/${encodeURIComponent(session.id)}`}
-                      className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-baseline gap-3 rounded-sm px-2 py-2 transition-colors hover:bg-white/[0.03] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ee6c1]"
+                      className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-baseline gap-3 rounded-control px-2 py-2 transition-colors hover:bg-white/[0.03] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ee6c1]"
                     >
                       <span className="min-w-0">
                         <span className="block truncate font-mono text-[13px] text-[#e6edf3]">
@@ -617,7 +617,7 @@ export function Stats() {
         </p>
 
         {damaged.map((row) => (
-          <div key={row.id} className="mt-4 rounded-sm border border-[#3a3520] bg-[#15130d] p-4">
+          <div key={row.id} className="mt-4 rounded-control border border-[#3a3520] bg-[#15130d] p-4">
             <p className="font-mono text-[13px] leading-relaxed text-[#f2cf8a]">
               Shu brauzerda saqlangan <span className="text-[#e6edf3]">{row.store}</span> ma&apos;lumoti
               o&apos;qib bo&apos;lmaydigan holatda topilgan edi. Dastur uni o&apos;chirmadi —
@@ -646,7 +646,7 @@ export function Stats() {
             </div>
 
             {damagedArmed !== null && damagedArmed.id === row.id ? (
-              <div className="mt-3 rounded-sm border border-[#452027] bg-[#160f12] p-4">
+              <div className="mt-3 rounded-control border border-[#452027] bg-[#160f12] p-4">
                 <p className="font-mono text-[13px] leading-relaxed text-[#ff9f9f]">
                   Bu nusxa butunlay o&apos;chiriladi va qaytarib bo&apos;lmaydi — u
                   ma&apos;lumotning oxirgi qolgan izi bo&apos;lishi mumkin. Avval yuklab olib
@@ -666,7 +666,7 @@ export function Stats() {
         ))}
 
         {junk > 0 ? (
-          <div className="mt-4 rounded-sm border border-[#22303d] bg-[#0b0f14] p-4">
+          <div className="mt-4 rounded-control border border-[#22303d] bg-[#0b0f14] p-4">
             <p className={NOTE}>
               Darslar omborida tanib bo&apos;lmaydigan {junk} ta yozuv saqlanib qolgan. Ular dars
               ro&apos;yxatiga chiqmaydi, lekin har saqlashda diskka qaytariladi va joy egallaydi.
@@ -734,7 +734,7 @@ export function Stats() {
         />
 
         {importArmed ? (
-          <div className="mt-4 rounded-sm border border-[#3a3520] bg-[#15130d] p-4">
+          <div className="mt-4 rounded-control border border-[#3a3520] bg-[#15130d] p-4">
             {/* Import BIRLASHTIRMAYDI, ALMASHTIRADI — `stats.ts` dagi izohda sababi: aks
                 holda bitta faylni ikki marta import qilish yig'indilarni ikkilantirardi.
                 Shuning uchun ogohlantirish fayl tanlashdan OLDIN ko'rsatiladi. */}
@@ -756,7 +756,7 @@ export function Stats() {
         ) : null}
 
         {clearArmed ? (
-          <div className="mt-4 rounded-sm border border-[#452027] bg-[#160f12] p-4">
+          <div className="mt-4 rounded-control border border-[#452027] bg-[#160f12] p-4">
             <p className="font-mono text-[13px] leading-relaxed text-[#ff9f9f]">
               Barcha seanslar, kunlik yig&apos;indi va so&apos;z reytingi o&apos;chiriladi.
               Qaytarib bo&apos;lmaydi. Darslar (matnlar) esa joyida qoladi.

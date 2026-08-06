@@ -2,6 +2,67 @@
 
 @theme {
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+
+  /* -------------------------------------------------------------------
+     Rang tokenlari. Muammo: xom hex qiymatlar har bir faylda qayta-qayta
+     yozilgan edi, va bitta "xira meta matn" roli uchun ikkita yaqin, lekin
+     BIR XIL EMAS kulrang aylanib yurardi: "#7d8b9c" (ko'p ekranlarda) va
+     "#7d8fa1" (Layout, EmptyState). Har bir ROL uchun endi YAGONA manba —
+     qiymat sifatida ilova bo'ylab ustunlik qilgan variant tanlandi (grep
+     bilan tekshirilgan), shu bois qolgan fayllar buni qabul qilganda
+     deyarli sezilmaydigan darajada kichik vizual siljish bo'ladi.
+     Bu yerda FAQAT o'zimiz egalik qiladigan fayllarda ishlatiladi;
+     boshqa fayllar (Home.tsx va h.k.) tokenni keyinroq o'zi qabul qiladi.
+     ------------------------------------------------------------------- */
+  /* asos — butun ilova foni (<body>, sticky header, fokus halqasi offseti). */
+  --color-base: #0b0f14;
+  /* panel — karta/panel/bo'lim foni, asosdan bir bosqich ochiqroq. */
+  --color-panel: #0d131a;
+  /* chegara — panel/karta struktura chizig'lari uchun. (Button.tsx o'zining
+     boshqaruv-chegarasini ["#22303d"] saqlab qoladi — bu ATAYIN boshqa rol:
+     boshqaruv chegarasi panel chegarasidan sal yorqinroq bo'lishi kerak,
+     interaktiv element sifatida ko'zga tashlanib turishi uchun.) */
+  --color-border: #1d2833;
+  /* matn — asosiy o'qiladigan matn rangi. */
+  --color-text: #e6edf3;
+  /* xira — ikkilamchi/meta matn: sana, yorliq, izoh, kichik yozuvlar.
+     Kontrast >= 4.5:1 SHART — pastda hisoblab tasdiqlangan (11px kichik
+     harflarda ham saqlanadi, quyida "text-muted" ishlatilgan joylarga q.). */
+  --color-muted: #7d8b9c;
+  /* aksent — na'na rangi. FAQAT faol holat va bitta asosiy harakat uchun —
+     boshqa joyda ishlatilsa "yagona yorqin rang" qoidasi buziladi. */
+  --color-accent: #5ee6c1;
+  /* xavf — buzuvchi harakat (masalan, o'chirish) rangi, Button.tsx dagi
+     `danger` variant bilan bir xil qiymat. Hozircha bu fayllarda
+     ishlatilmaydi, lekin boshqa komponentlar buni qabul qilishi uchun
+     shu yerda ro'yxatga olingan. */
+  --color-danger: #ff7b7b;
+
+  /* -------------------------------------------------------------------
+     Burchak radiusi — ikki bosqichli tizim. Button.tsx dagi niyat aniq
+     aytilgan: "Burchaklar deyarli o'tkir (4px) — asbob paneli hissi."
+     Muammo: bu niyat ba'zi joyda (Button, EmptyState) 4px bilan, Bosh
+     sahifa panellarida esa 16px (`rounded-2xl`) bilan ifodalangan edi —
+     bitta ro'yxat ichida bo'sh holat va to'ldirilgan holat ikki xil karta
+     shaklida ko'rinardi. Yechim: boshqaruv elementi sezilarli darajada
+     o'tkir qoladi, panel esa 16px emas, atigi 8px gacha yumshaydi —
+     "asbob paneli" hissi buzilmaydi, faqat yirik konteynerlar picha
+     yumshoq bo'ladi.
+     ------------------------------------------------------------------- */
+  /* boshqaruv — tugma, maydon, kichik quyi panel/dialog. Qiymat Tailwind
+     standart `rounded-sm` bilan bir xil (4px); nom shunchaki rolni aniq
+     ataydi va boshqa agentlar bilan muvofiqlashish uchun hujjatlashtiradi. */
+  --radius-control: 0.25rem; /* 4px */
+  /* panel — karta/yirik konteyner (masalan, dars kartasi, bo'sh holat
+     kartasi). Boshqaruvdan sal yumshoq, lekin 16px kabi dumaloq emas —
+     shunda boshqaruv va panel bir xil oilaga tegishlidek ko'rinadi. */
+  --radius-panel: 0.5rem; /* 8px */
+  /* Bu ikkovidan KICHIKROQ bir nechta joy ATAYIN tokensiz qoldirilgan va
+     tokenga o'tkazilmasligi kerak: `rounded-xs` (2px) — segment tugma va
+     havolaning fokus halqasi shakli; `rounded-[2px]` — afsonadagi 8x8px
+     nuqtalar (4px ularni deyarli doira qilib qo'yardi); `rounded-[3px]` —
+     matn ichidagi belgilash. Bular boshqaruv emas, undan ham mayda
+     elementlar; `--radius-control` ga bog'lansa ko'rinishi buziladi. */
 }
 
 html,
@@ -17,7 +78,7 @@ body {
      bo'lib chiqadi. Ilova butunlay monospace bo'lgani uchun asosni shu yerda
      belgilaymiz — `--font-mono` yuqorida `@theme` da allaqachon e'lon qilingan. */
   font-family: var(--font-mono);
-  background-color: #0b0f14;
-  color: #e6edf3;
+  background-color: var(--color-base);
+  color: var(--color-text);
   -webkit-font-smoothing: antialiased;
 }

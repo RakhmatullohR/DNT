@@ -13,21 +13,25 @@ export type EmptyStateProps = {
 
 export function EmptyState({ title, hint, action }: EmptyStateProps) {
   return (
-    <div className="rounded-sm border border-dashed border-[#1e2a36] bg-[#0d131a] px-6 py-14 text-center">
+    // `rounded-panel` — bu karta ro'yxatdagi dars kartasi bilan BIR XIL
+    // slotni egallaydi (Home.tsx darslar bo'sh bo'lganda shu yerga tushadi),
+    // shuning uchun radiusi ham panel tokeniga bog'langan — index.css dagi
+    // `--radius-panel` ga qarang.
+    <div className="rounded-panel border border-dashed border-border bg-panel px-6 py-14 text-center">
       {/* Kichik yorliq — bo'shlik "xato" emas, kutilgan holat ekanini bildiradi. */}
       <span
         aria-hidden="true"
-        className="font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-[#7d8fa1]"
+        className="font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-muted"
       >
         bo&apos;sh
       </span>
 
-      <h2 className="mt-4 font-mono text-[16px] font-medium text-[#e6edf3]">
+      <h2 className="mt-4 font-mono text-[16px] font-medium text-text">
         {title}
       </h2>
 
       {hint ? (
-        <p className="mx-auto mt-2 max-w-sm font-mono text-[13px] leading-relaxed text-[#7d8fa1]">
+        <p className="mx-auto mt-2 max-w-sm font-mono text-[13px] leading-relaxed text-muted">
           {hint}
         </p>
       ) : null}
