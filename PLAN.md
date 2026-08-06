@@ -20,7 +20,7 @@
 | M4 — statistika va eksport | BAJARILDI | `stats.ts`, `Results`, `Stats`, JSON eksport/import |
 | M5 — sayqal | BAJARILDI | yorliqlar, bo'sh holatlar, dars bo'yicha ovoz va tezlik |
 
-`npm test` yashil: `tsc --noEmit` toza, 15 fayl / 451 test. `npm run build` o'tadi.
+`npm test` yashil: `tsc --noEmit` toza, 15 fayl / 459 test. `npm run build` o'tadi.
 
 **Bu hujjat endi qurilish rejasi emas — qaror registri.** Quyidagi hamma narsa hozirgi
 zamonda yozilgan va kodda mavjud. Yagona istisno `> ⚠ Bajarilmagan:` bilan belgilangan
@@ -70,12 +70,14 @@ Muhit: `node v24.15.0`, `npm 11.12.1`. Loyiha qurilgan; bosqichlar holati yuqori
 ```
 dictation-and-typing/
 ├── package.json            # "type": "module"
+├── package-lock.json       # qotirilgan; global paket yo'q qoidasining dalili
 ├── tsconfig.json           # allowImportingTsExtensions + noEmit + erasableSyntaxOnly
 ├── vite.config.ts          # @tailwindcss/vite, /api -> :8787 proxy
 ├── vitest.config.ts        # vite.config.ts dan MUSTAQIL — pastdagi izohga qarang
 ├── index.html              # SPA kirish nuqtasi
 ├── .gitignore              # node_modules/ dist/ audio-words/ .omc/ *.local .DS_Store
 ├── README.md               # QANDAY ishlatiladi (bu hujjat — NEGA shunday)
+├── PLAN.md                 # shu hujjat — qaror registri
 ├── shared/                 # server VA klient import qiladigan YAGONA nusxa
 │   ├── filename.ts         # so'z -> fayl nomi, ovoz/tezlik tozalash
 │   └── overrides.ts        # homograf talaffuz jadvali — .json EMAS, sababi §3 da
@@ -114,6 +116,7 @@ dictation-and-typing/
 │       ├── Button.tsx
 │       └── EmptyState.tsx
 └── tests/                  # Vitest projects: core + server + client (hammasi node)
+    └── smoke/              # tarmoqli smoke — `npm test` ichida EMAS (§9)
 ```
 
 **Node 24 da `tsx` KERAK EMAS.** Tekshirildi: `process.features.typescript === "strip"`, ya'ni `node --watch server/index.ts` to'g'ridan-to'g'ri ishlaydi. Buning ikkita oqibati bor:
@@ -162,9 +165,24 @@ Import paytida matn bir marta tozalanadi va **normallashtirilgan matn** target s
 | 1 | NFD → birikuvchi diakritikalarni (`U+0300–U+036F`) olib tashlash → NFC. `café→cafe`, `naïve→naive` |
 | 2 | Aqlli qo'shtirnoq `“ ” „ ‟` → `"`, apostrof `‘ ’ ‚ ‛` → `'` |
 | 3 | Tire `— – ‒ −` → `-`, `…` → `...` |
-| 4 | NBSP `U+00A0`, `U+202F`, tab → oddiy probel |
-| 5 | Ketma-ket bo'shliqlarni bittaga siqish, `trim()` |
+| 4 | HAR QANDAY Unicode bo'shlig'i (`\p{White_Space}`) → oddiy probel. Jumladan NBSP `U+00A0`, `U+202F`, tab, `\n`, `\r`, `U+0085`, `U+2000–U+200A` |
+| 5 | `trim()`, so'ng ketma-ket bo'shliqlarni bittaga siqish |
 | 6 | Qolgan `0x20–0x7E` dan tashqari har qanday belgi → olib tashlanadi va **ro'yxatga yoziladi** |
+| 7 | 6-bosqich biror narsa olib tashlagan bo'lsa — 5-bosqich QAYTA qo'llanadi |
+
+4-bosqich ataylab sanab emas, SINF bo'yicha yozilgan (`\p{White_Space}`): qo'lda sanalgan
+ro'yxat yangi manbadan kelgan notanish bo'shliqni o'tkazib yuborardi va u 6-bosqichda
+jimgina O'CHIRILARDI — ya'ni `so'z so'z` ikki so'z emas, bitta bo'lib qolardi.
+
+5-bosqichda `trim()` siqishdan OLDIN turishi ataylab. Teskari tartibda kirish chetidagi
+bo'shliqlar avval `/ {2,}/` ga tushib, `changes` ga soxta `space` yozuvi qo'shardi —
+`normalize('   hello')` diff ekranida "bo'shliq siqildi" deb ko'rinardi, holbuki
+foydalanuvchi uchun hech narsa siqilmagan, shunchaki chet kesilgan.
+
+7-bosqich `normalize` ning idempotentligi uchun MAJBURIY. Belgi olib tashlanganda uning
+o'rnida qo'shni probellar yonma-yon qolishi mumkin (`a © b` → `a  b`); ular siqilmasa
+ikkinchi `normalize` chaqiruvi ularni siqib, `changes` ni bo'sh emas qilardi — ya'ni
+quyidagi idempotentlik kafolati buzilardi.
 
 Import ekranida asl va tozalangan matn **yonma-yon** ko'rsatiladi, o'zgargan belgilar ajratib beriladi (`NormalizeDiff` komponenti). Foydalanuvchi ko'rmasdan hech narsa o'zgarmaydi.
 
@@ -201,6 +219,11 @@ shart. Usiz `revs.` `vs.` deb o'qilib, keyingi gap bilan noto'g'ri birlashardi.
 - **40 so'zdan uzun gap** import ekranida belgilanadi va qo'lda bo'lish taklif qilinadi (`block` rejimida uzun gap charchatadi).
 - **Darhol boshlash:** dastlabki **3 gap** sintez qilinib mashq ochiladi, qolgani fonda davom etadi. Aks holda 2000 so'zlik matn 4–8 daqiqa bloklangan progress bar demakdir.
 - Import uzilib qolsa — qayta ochilganda qolgan so'zlardan davom etadi (`audio-words/` dagi kesh o'zi holat vazifasini bajaradi). Mashqqa kirilganda darsning qolgan qismi fon yo'lagi orqali qaytadan so'raladi (§5a) — server uchun kesh urishi arzon, shuning uchun alohida "qayerda to'xtadi" hisobini yuritish shart emas.
+  Bitta shart bor: bu so'rov **ovoz yoqiq bo'lgandagina** yuboriladi. Ovoz o'chiq bo'lsa
+  sintez qilingan fayl baribir ishlatilmaydi, ya'ni so'rov yo'qolmaydi — KECHIKTIRILADI:
+  almashtirgich yoqilgan zahoti effekt qayta ishga tushadi va qoldiqni bir marta so'raydi.
+  Yagona qoladigan holat — butun seans ovozsiz o'tsa, dars qoldig'i o'sha seansda umuman
+  so'ralmaydi; bu ataylab, chunki ovozsiz mashqda keshning o'zi keraksiz.
 - Matn tahrirlanayotganda qayta tahlil `ANALYZE_DEBOUNCE_MS = 250` bilan kechiktiriladi. Usiz 5000 so'zlik paste'da har bosishda normalizatsiya va gapga bo'lish qaytadan ishlab, ekran muzlab qolardi. Sintez `SYNTH_CHUNK = 16` bo'lakchalarda yuboriladi.
 
 ---
@@ -211,9 +234,16 @@ shart. Usiz `revs.` `vs.` deb o'qilib, keyingi gap bilan noto'g'ri birlashardi.
 default (en-US-AvaNeural, 0%)  ->  <word>.mp3          the.mp3, don't.mp3
 katta harfli qisqartma          ->  <word>@caps.mp3     US -> us@caps.mp3
 boshqa ovoz/tezlik              ->  <word>@<Voice>@<rate>.mp3
+ikkalasi birga                  ->  <word>@caps@<Voice>@<rate>.mp3
+                                    US + en-GB-SoniaNeural + (-10)
+                                      -> us@caps@en-GB-SoniaNeural@-10.mp3
 ```
 
-- Normalizatsiyadan keyin so'z doim `/^[a-z]+(?:['-][a-z]+)*$/` ga mos keladi. Apostrof va tire **saqlanadi** → `don't` va `don-t` to'qnashmaydi. HTTP yo'lida `encodeURIComponent`.
+Yorliqlar QO'SHILADI, biri ikkinchisini almashtirmaydi. Aks holda nostandart ovozda
+qisqartma `us@en-GB-SoniaNeural@-10.mp3` bo'lib, oddiy `us` bilan bitta faylga tushardi
+va /ʌs/ talaffuzi keshni ifloslantirardi.
+
+- Normalizatsiyadan keyin so'z doim `/^[A-Za-z]+(?:['-][A-Za-z]+)*$/` ga mos keladi. Registr ATAYIN saqlanadi: normalizatsiya bosh harfga tegmaydi, `@caps` qoidasi esa aynan katta harfni ko'rishi kerak — kichik harfga majburlangan regex `The` va `US` ni ham rad etardi, ya'ni eng ko'p uchraydigan so'zlar ovozsiz qolardi. Fayl nomi baribir `toLowerCase()` dan o'tadi, demak registr faqat FILTR va `@caps` qaroriga ta'sir qiladi. Apostrof va tire **saqlanadi** → `don't` va `don-t` to'qnashmaydi. HTTP yo'lida `encodeURIComponent`.
 - **Qisqartmalar:** normal qoida bilan `US` → `us.mp3` bo'lib, /ʌs/ deb o'qilardi. Barcha harfi katta va uzunligi ≥2 bo'lgan token alohida `@caps` fayliga tushadi va **asl katta harfli shakli** sintez qilinadi.
 - **Ma'lum cheklov — omograflar.** So'zlar alohida sintez qilinadi va umrbod keshlanadi, shuning uchun `read`, `live`, `wind`, `lead`, `tear` birinchi sintezdagi talaffuzda **abadiy qotib qoladi**. Yumshatish: `shared/overrides.ts` — `{"read": "reed"}` ko'rinishidagi qo'lda tuzatiladigan jadval; sintez matni almashadi, fayl nomi imlodan olinadi. Hozirgi jadvalda to'qqiz kalit: `read`, `lead`, `live`, `wind`, `tear`, `row`, `bow`, `sow`, `close`.
 - **Nega `overrides.ts`, `.json` emas.** Node 24 `import x from './overrides.json'` ni `with { type: 'json' }` atributisiz **rad etadi** (`ERR_IMPORT_ATTRIBUTE_MISSING`), Vite esa `.json` ni o'zicha JS moduliga aylantiradi va atribut mos kelmay qolishi mumkin. Bu §1 dagi "bitta fayl, ikki toolchain" qonunining aynan o'zi: oddiy `.ts` moduli har ikkala tomonda bir xil ishlaydi, hech qanday atribut va hech qanday resolver farqisiz.
@@ -225,18 +255,25 @@ boshqa ovoz/tezlik              ->  <word>@<Voice>@<rate>.mp3
 
 ## 4. Yozuv dvigateli (`src/core/typing.ts`)
 
-Sof reducer, audio/DOM'siz:
+Sof reducer, audio/DOM'siz. Tiplar `types.ts` da, reducer `typing.ts` da — §1 dagi
+"`types.ts` — umumiy tiplar" bo'linishi shu yerda ham amal qiladi:
 
 ```ts
+// src/core/types.ts
 type Key = { type:'char'; char:string } | { type:'backspace' }
-type Event = Key
+type TypingEvent = Key
   | { type:'playbackStarted';  tokenIndex:number }   // ⭐ YANGI
   | { type:'playbackFailed';   tokenIndex:number }   // ⭐ YANGI
 
 type Effect = { type:'playWord'; tokenIndex:number } | { type:'finished' }
 
-function reduce(s:TypingState, e:Event, now:number): { state:TypingState; effects:Effect[] }
+// src/core/typing.ts
+function reduce(s:TypingState, e:TypingEvent, now:number): { state:TypingState; effects:Effect[] }
 ```
+
+Hodisa tipi `Event` emas, **`TypingEvent`** deb ataladi: `Event` — brauzerning global
+tipi, va uni soya qilish klaviatura adapterida (`KeyboardEvent` bilan bir faylda)
+jimgina noto'g'ri tipni tanlashga olib kelardi.
 
 Vaqt ATAYIN uchinchi argument sifatida beriladi, ichkarida `Date.now()` chaqirilmaydi:
 shunda 5 soniyalik pauza qoidasini soxta soat qurmasdan testlash mumkin. `session.ts` ham
@@ -275,7 +312,12 @@ Bu shartingizni buzmaydi: ovoz chiqmagan so'z "bir marta o'qilgan" hisoblanmaydi
 
 ### Klaviatura adapteri (avval umuman yozilmagan edi)
 
-`window.keydown` → `Event` aylantirish qoidasi:
+`window.keydown` → `KeyAction` aylantirish qoidasi. Adapter reducer hodisasini EMAS,
+yuqori darajali amalni qaytaradi: `KeyAction = { type:'event', event:TypingEvent }
+| { type:'next' } | { type:'restart' } | { type:'skip' } | { type:'ignore' }`.
+Sabab: `Enter`/`Tab`/`Escape` reducerning ishi emas — ular gap ALMASHTIRADI, ya'ni
+seans oqimiga tegishli (§7). Ularni `TypingEvent` ga tiqish reducerga marshrut va
+statistika haqidagi bilimni olib kirardi va uning sofligini yo'q qilardi:
 - Harf sifatida qabul qilinadi: `e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && !e.isComposing`
 - `Backspace` → `{type:'backspace'}`
 - `Enter` → gap tugagan bo'lsa keyingisiga o'tadi
@@ -324,7 +366,7 @@ Qo'shimcha: `validateRate` da **diapazon tekshiruvi yo'q** (`:140-154`) — noto
 - `@fastify/static` + `setNotFoundHandler` → `index.html` (SPA fallback). Usiz beshta ekranning hammasi sahifa yangilanganda 404 beradi. `/api/*` marshrutlari **oldin** ro'yxatdan o'tkaziladi.
 - Ishga tushishda `fs.mkdir('audio-words', {recursive:true})` — usiz birinchi yozuv `ENOENT` beradi.
 
-**Atomik yozish (`store.ts`).** Avvalgi reja `fs.access` bilan kesh tekshirardi — bu TOCTOU. `Ctrl+C` yoki React 19 StrictMode ning ikki marta chaqiriladigan effekti yarim yozilgan MP3 qoldiradi; `fs.access` uni **abadiy kesh urdi** deb ko'radi va o'sha so'z umrbod jim bo'ladi. Yechim: `<nom>.<pid>.tmp` ga yozish → hajm va MP3 sarlavhasini (`ID3` / `0xFFEx`) tekshirish → `fs.rename` (ext4 da atomik). Ustiga `Map<filename, Promise>` in-flight dedup.
+**Atomik yozish (`store.ts`).** Avvalgi reja `fs.access` bilan kesh tekshirardi — bu TOCTOU. `Ctrl+C` yoki React 19 StrictMode ning ikki marta chaqiriladigan effekti yarim yozilgan MP3 qoldiradi; `fs.access` uni **abadiy kesh urdi** deb ko'radi va o'sha so'z umrbod jim bo'ladi. Yechim: `<nom>.<pid>.<hisoblagich>.tmp` ga yozish → hajm va MP3 sarlavhasini (`ID3` / `0xFFEx`) tekshirish → `fs.rename` (ext4 da atomik). Ustiga `Map<filename, Promise>` in-flight dedup. Nomdagi hisoblagich `<pid>` ustiga qo'shiladi, chunki `pid` faqat JARAYONLAR orasida noyob: bitta jarayonning ikki chaqiruvi (`voice` o'zgargan darsda bir xil so'z) bir vaqtda bir xil `.tmp` ga yozib, ikkalasi ham buzuq fayl qoldirardi.
 
 ### 5b. Klient (`src/audio/AudioManager.ts`)
 
@@ -332,6 +374,10 @@ Qo'shimcha: `validateRate` da **diapazon tekshiruvi yo'q** (`:140-154`) — noto
 - **Har ijroga yangi `AudioBufferSourceNode`.** Node bir martalik: ikkinchi `start()` `InvalidStateError` beradi va butun seans ovozi o'ladi. "Bitta kanal" — bu *joriy nodega ishora qiluvchi bitta o'zgaruvchi*, qayta ishlatiladigan node emas.
 - **Dekodlangan `AudioBuffer` keshlanadi, `ArrayBuffer` emas** — `decodeAudioData` kirish buferini yo'q qiladi (detach), shuning uchun baytlarni qayta dekodlash jimlik beradi.
 - **Boshidagi jimlikni kesish.** MP3 kodlovchi kechikishi + Microsoft padding ~100–200 ms. Dekoddan keyin 0-kanal bo'ylab birinchi `|sample| > 0.01` qidiriladi va `src.start(0, offset)` bilan ijro shu joydan boshlanadi. Qisqa so'zlar uchun bu hal qiluvchi: usiz `a` (150 ms oyna) **faqat jimlik** bo'lardi.
+  Offset topilgan nuqtaning O'ZI emas — undan `TRIM_SAFETY_S = 20 ms` orqaga suriladi.
+  0.01 chegarasi tovushning eng boshidagi past amplitudali qismini (portlovchi undoshning
+  havo oqimi, `s`/`f` ning boshlanishi) jimlik deb kesib yuborardi va `so` `o` bo'lib
+  eshitilardi. 20 ms — qulog'i sezmaydigan, lekin hujumni saqlaydigan chekinish.
 - **⭐ Qisqa so'z guard'i.** `GUARD_MS = 250`, `MAX_LAG_MS = 300`.
   Yangi so'z kelganda: joriy ijro `GUARD_MS` dan kam bo'lsa **va** to'plangan kechikish `MAX_LAG_MS` dan oshmasa → yangi so'z `startedAt + GUARD_MS` ga rejalashtiriladi; aks holda joriy ijro so'ndiriladi va yangisi darhol boshlanadi. Kutish slotida bitta so'z turadi; undan ham yangisi kelsa, kutayotgani tashlanadi (`playedWords`ga tushmagani uchun holat buzilmaydi, lekin u so'z eshitilmaydi — `MAX_LAG_MS` tufayli bu kamdan-kam bo'ladi).
 - **Kechikish byudjeti (`lagMs`) — guard aslida nima kafolatlaydi.**
@@ -369,12 +415,32 @@ Qo'shimcha: `validateRate` da **diapazon tekshiruvi yo'q** (`:140-154`) — noto
 
 `localStorage`: `dnt.lessons.v1`, `dnt.stats.v1`.
 
-- **Net WPM** = `(to'g'ri belgilar / 5) / daqiqa`, **Raw WPM** alohida.
+- **Net WPM** = `(to'g'ri belgilar / 5) / daqiqa`, **Raw WPM** alohida. "To'g'ri belgilar" —
+  `typed.length`, ya'ni ekranda TURGAN matn: backspace uni kamaytiradi.
+- **Bitta istisno — Statistika ekranidagi KUNLIK trend chizig'i.** U `dayStat.correctKeystrokes`
+  dan hisoblanadi, ya'ni to'g'ri BOSISHLAR bo'yicha: backspace'dan keyin qayta yozilgan
+  harf ikki marta sanaladi va kunlik WPM gap darajasidagi Net WPM dan biroz yuqori chiqadi.
+  Sabab ombor shaklida: kunlik jadval seans yopilganda faqat yig'ma sonlarni saqlaydi
+  (`activeMs`, `keystrokes`, `correctKeystrokes`) — `typed.length` gap yozuvi bilan birga
+  yashaydi va 500 seansdan keyin eng eskilari tashlanadi (§6b). Ya'ni to'g'ri belgilarni
+  kunlik saqlash uchun jadvalga yangi maydon kerak bo'lardi; tanlov — trend uchun mavjud
+  kattalikni ishlatish. Gap, seans, `totals()` va `audioComparison()` — hammasi to'g'ri
+  formulada; farq faqat trend chizig'ida va u UI da aytilgan.
 - **Aniqlik** = `to'g'ri bosishlar / jami bosishlar`.
 - **Xato so'zlar — ta'sirlanish soniga nisbatan.** `{word: {exposures, errors}}` saqlanadi, ro'yxat `errors/exposures` bo'yicha va faqat `exposures ≥ 5` bo'lganlar orasida tartiblanadi. Xom son bo'yicha tartiblansa ro'yxat boshini doim `the` egallardi — 200 marta uchraydi, qiyin bo'lgani uchun emas. Tartib uch bosqichli: ulush → ta'sirlanish soni → alifbo; oxirgisi faqat natija har chaqiruvda bir xil chiqishi uchun.
 - **Natijalar ekranida chegara 1 ga tushiriladi** (`hardestWords(1, ...)`) — bitta seansdan keyin deyarli hech bir so'z 5 martaga yetmaydi va standart chegara bilan ro'yxat doim bo'sh chiqardi. Statistika ekranida §6 dagi 5 martalik chegara saqlanadi, farq esa foydalanuvchiga UI da aytiladi: ro'yxat shu seansda uchragan so'zlardan, ulush esa butun tarix bo'yicha.
+  Chegara bilan BIRGA ikkinchi filtr keladi: `errors === 0` bo'lgan so'z ro'yxatga
+  umuman kirmaydi. `hardestWords` ning o'zi xatosiz so'zlarni chiqarib tashlamaydi
+  (u faqat `exposures` bo'yicha filtrlaydi va `rate = 0` ni oxiriga tartiblaydi),
+  shuning uchun chegara 1 ga tushirilgach ro'yxatning sakkiz qatorini "0%" li so'zlar
+  to'ldirib ketardi — ya'ni "eng qiyin so'zlar" ro'yxati eng oson so'zlarni ko'rsatardi.
+  Shu filtr tufayli xatosiz seansda ro'yxat o'rniga bo'sh holat matni chiqadi.
 - **Seriya (streak)** aniq ta'rif bilan: kunlik ≥100 to'g'ri bosish. Aks holda bitta gap seriyani ushlab turaverardi. Tugallanmagan BUGUN seriyani uzmaydi: kun hali tugamagan, shuning uchun bugun chegaraga yetmagan bo'lsa sanash kechadan boshlanadi.
 - **⭐ `audioComparison()` — gate'ning o'lchov asbobi.** Gaplarni ovoz yoqiq/o'chiq holatiga qarab ikki ustunga ajratadi va har biri uchun net WPM, raw WPM va aniqlikni beradi. WPM `activeMs` bo'yicha og'irlanadi — uch so'zlik gap to'liq gap bilan teng vaznga ega bo'lmasligi kerak. §8 dagi gate faqat shu funksiya borligi uchun o'tkaziladi.
+  Statistika ekrani ustunlardan **net WPM va aniqlikni** chizadi; `rawWpm` hisoblanadi,
+  lekin ko'rsatilmaydi — gate savoli "audio o'zlashtirishga ta'sir qiladimi?", raw WPM
+  esa xatolarni ham sanagani uchun bu savolga javob bermaydi. U funksiya natijasida
+  qoladi, chunki JSON eksportda kerak bo'ladi.
 - **Aniq qoidalar:** taymer **birinchi bosishda** boshlanadi; bosishlar orasi **5 s** dan oshsa taymer pauza qiladi; `Tab` bilan qayta boshlangan urinish statistikaga **kirmaydi** (lekin qayta boshlash soni gap bo'yicha yoziladi); `Escape` bilan tashlangan gap chiqarib tashlanadi. Bu qoidalar yozilmasa, kod ularni tasodifan hal qiladi va WPM trendi siz tanlamagan narsani o'lchaydi.
 - **JSON eksport/import — M4 da**, M5 da emas. Oylab yig'ilgan xato-so'z tarixi bitta "clear browsing data" bilan yo'qoladi; bu ~30 qator kod.
 - Grafiklar: qo'lda yozilgan inline SVG. Chart kutubxonasi yo'q.
@@ -387,6 +453,12 @@ Qo'shimcha: `validateRate` da **diapazon tekshiruvi yo'q** (`:140-154`) — noto
 
 `SessionRecord`: `id`, `lessonId`, `lessonTitle`, `startedAt`, `endedAt`, `sentences[]`
 va gaplardan qayta hisoblangan yig'indilar.
+
+Qayta hisoblashning bitta istisnosi bor: `sentences` BO'SH bo'lsa, yig'indilar kirishdan
+qanday kelgan bo'lsa shundayligicha qoladi (maydonlar baribir alohida tozalanadi —
+manfiy, `NaN` va `Infinity` nolga tushadi). Aks holda faqat yig'indi bilan tiklangan
+eski seans — masalan `unknownSessions` orqali qaytib kelgan yoki JSON import qilingan
+yozuv — nolga aylanardi va u bilan birga o'sha kunning seriyasi (§6) ham yo'qolardi.
 
 Uch maydongina izohga muhtoj, chunki faqat ularda qaror bor:
 
@@ -421,7 +493,7 @@ ko'rsatadi — bu ma'lum cheklov va UI da ochiq aytilgan.
 | Skip bormi? | `Escape` — gap tashlanadi, statistikaga kirmaydi. Usiz noma'lum imloda seans boshi berk ko'chaga kirardi. Ikkita oqibati bor: tashlangan gap seans hajmini baribir yeydi, va uning so'zlari uchun ta'sirlanish ham yozilmaydi (yozilsa, o'qimasdan `Escape` bosish xato ulushini sun'iy pasaytirardi). |
 | Bo'sh turish | Bosishlar orasi >5 s → taymer pauza. |
 | Davom ettirish | **Gap darajasida.** Yarim yozilgan gap tashlanadi. Kursorni gap o'rtasidan tiklash mumkin emas: o'tib ketilgan so'z boshi endi hech qachon ovoz bermaydi. Tugagan dars esa 0-indeksdan qayta boshlanadi, oxirgi gapdan emas: "tugagan" belgisi `progress === sentences.length` bo'lgani uchun, uni oxirgi gapga qaytarish Natijalar → "Davom ettirish" → o'sha gap → yana Natijalar tsiklini yasab, har aylanishda bir gaplik seansni statistikaga yozardi. |
-| Seans uzunligi | 20 gap yoki 10 daqiqa — qaysi biri oldin tugasa → Natijalar ekrani. Agar bitta ham gap yozilmagan bo'lsa — Bosh sahifaga qaytadi: bo'sh seans statistikani faqat ifloslantirardi. |
+| Seans uzunligi | 20 gap yoki 10 daqiqa — qaysi biri oldin tugasa → Natijalar ekrani. Agar bitta ham gap yozilmagan bo'lsa — Bosh sahifaga qaytadi: bo'sh seans statistikani faqat ifloslantirardi. **"Yozilgan" — `skipped` bo'lmagan gap.** Yozuvlar SONIGA qaralsa, hammasi `Escape` bilan tashlangan seans ham "bo'sh emas" ko'rinardi va omborga `activeMs: 0`, `netWpm: 0` bo'lgan seans tushardi — ya'ni qoida aynan o'zi oldini olishi kerak bo'lgan holatni o'tkazib yuborardi. Darvoza `hasWrittenSentence()` sof funksiyasida va test bilan mixlangan (§9). |
 | Ovoz yoqiqmi? | Almashtirgich holati `dnt.audio.v1` da saqlanadi va HAR GAP uchun alohida yoziladi — tugmani seans o'rtasida ham bosish mumkin (§6a, §8). |
 | "Dars" nima? | Bitta import qilingan matn. Seans — uning bir bo'lagi. Ovoz va tezlik ham darsning xossasi (§8). |
 
@@ -437,16 +509,53 @@ instance, timeout, atomik yozish), `AudioManager` (trim, guard, fade),
 `playbackStarted/Failed` zanjiri. Chiqdi: 1-harfda so'z bir marta eshitiladi — guard
 oynasi doirasida (aniq kafolat §5b da).
 
-**⭐ M2/M3 oralig'idagi gate — bir haftalik shaxsiy tekshiruv.** Matn ko'rinib turgani uchun mashqni **ovozsiz ham** bajarish mumkin — ya'ni audio vazifa uchun majburiy emas, faqat qo'shimcha. Bir hafta kunma-kun almashtirib (ovoz yoqiq / o'chiq) bir xil hajmdagi matn teriladi. Agar WPM va aniqlik farq qilmasa — audio qayta ishlanmayapti va mexanikani qayta ko'rib chiqish kerak. Bu gipotezani tekshirishning eng arzon yo'li va baribir qiladigan mashqingizdan boshqa hech narsa talab qilmaydi.
+**⭐ M2/M3 oralig'idagi gate — shaxsiy tekshiruv.** Matn ko'rinib turgani uchun mashqni **ovozsiz ham** bajarish mumkin — ya'ni audio vazifa uchun majburiy emas, faqat qo'shimcha. Kunma-kun almashtirib (ovoz yoqiq / o'chiq) bir xil hajmdagi matn teriladi. Agar WPM va aniqlik farq qilmasa — audio qayta ishlanmayapti va mexanikani qayta ko'rib chiqish kerak. Bu gipotezani tekshirishning eng arzon yo'li va baribir qiladigan mashqingizdan boshqa hech narsa talab qilmaydi.
 
 Almashtirgichning o'zi boshidan bor edi, lekin ovoz holati hech qayerda YOZILMAGANI
 uchun tajribaning natijasini o'qib bo'lmasdi — ya'ni loyihaning butun pedagogik
 farazini tekshiradigan yagona sinov o'tkazib bo'lmaydigan holatda qolgan edi. Buni
 `audioComparison()` (§6) yopdi, protokol README da.
 
-> ⚠ **Bajarilmagan:** tajribaning o'zi. Asbob tayyor, hafta o'tkazilmagan. Gate M2 va M3
-> orasida turishi kerak edi; amalda M3–M5 undan oldin qurildi, ya'ni gate salbiy natija
-> bersa qayta ko'riladigan hajm rejadagidan katta.
+**Asbob tekshirildi, protokol qayta o'lchandi.** Sun'iy seans ma'lumotlari bilan
+`audioComparison()` yugurtirildi: og'irlash to'g'ri ishlaydi (oddiy o'rtacha farqni 59% ga
+bo'rttirardi), `skipped` gaplar ikkala ustundan chiqariladi, maydonsiz eski yozuvlar
+`noma'lum` ga tushadi va `off` ni ifloslantirmaydi. Asbobning matematikasi to'g'ri.
+Qayta o'lchangani — **hafta uzunligi**, va uchta qaror shundan chiqdi:
+
+- **Bir hafta emas, sakkiz kun; va u ham faqat ~15% dan katta effektni tutadi.**
+  Kunlik chegara `SESSION_MAX_SENTENCES = 20` bo'lgani uchun "kuniga 20 gap" aynan bitta
+  seans, ya'ni haftada 7 ta kuzatuv — 140 ta emas. Gaplar bir kun ichida ketma-ket
+  teriladi (bir dars, bir kayfiyat, bir charchoq), demak ular mustaqil emas va tahlilning
+  haqiqiy birligi **kun**. Shundan minimal seziladigan effekt 13–24% chiqadi; 5% farq
+  uchun 5–15 hafta kerak bo'lardi. Toq kun (4 vs 3) ustunlarni nomutanosib qoldirgani
+  uchun sakkiz kun tanlandi. Almashtirish tartibi (ABABABAB) esa saqlanadi: A va B
+  kunlarining o'rtacha pozitsiyasi teng, ya'ni hafta davomidagi tabiiy tezlashish
+  natijaga deyarli siljish qo'shmaydi — bu tartibning butun maqsadi.
+- **"Farq yo'q" va "o'lchay olmadik" — boshqa-boshqa xulosa, va README avval ularni
+  ajratmasdi.** Haqiqiy effekt nol bo'lganda ham ekran uchdan bir hollarda ±2 wpm dan
+  katta farq ko'rsatadi. Ajratilmasa, shovqin "audio ishlamayapti" deb o'qilib, gate
+  o'zi oldini olishi kerak bo'lgan xatoni — keraksiz qayta qurishni — keltirib
+  chiqarardi.
+- **Taqqoslash butun tarixni oladi, ovoz holati esa standart bo'yicha yoqiq.** Ya'ni
+  tajribadan oldin qilingan har qanday mashq "ovozli" ustuniga tushadi. Sinovda bu
+  haqiqiy +4 wpm effektni ko'rinadigan −7.5 wpm ga aylantirdi — ishorani ag'dardi.
+  Funksiyaga sana filtri QO'SHILMADI: gate bir martalik tajriba, doimiy imkoniyat emas,
+  va filtr UI da ham, tipda ham yangi holat talab qilardi. Buning o'rniga qaror ekrandan
+  emas, JSON eksportidan chiqariladi — `at`, `audioEnabled`, `activeMs`, `netWpm`,
+  `lessonId` hammasi o'sha yerda. Ekran endi kuzatish asbobi, qaror asbobi emas.
+
+**Ma'lum cheklov — `audioEnabled: true` "ovoz eshitildi" degani emas.** U almashtirgich
+holatini yozadi, sintez natijasini emas: TTS server tushib qolsa yoki sintez yiqilsa,
+gap baribir "ovozli" deb yoziladi. "Nechta so'z rostdan o'qildi" hech qayerda
+saqlanmaydi. Buni yozish `SentenceRecord` ga yangi maydon va `AudioManager` dan
+statistikaga yangi yo'l talab qilardi — gate uchun arzimaydi, chunki mashq ekrani
+serverning o'ligini allaqachon ko'rsatadi (§5a). Shuning uchun bu **protokol sharti**
+bo'lib qoldi: server ogohlantirishi chiqqan kun hisobga kirmaydi (README).
+
+> ⚠ **Bajarilmagan:** tajribaning o'zi. Asbob tayyor va tekshirilgan, protokol qayta
+> o'lchangan — sakkiz kun o'tkazilmagan. Gate M2 va M3 orasida turishi kerak edi;
+> amalda M3–M5 undan oldin qurildi, ya'ni gate salbiy natija bersa qayta ko'riladigan
+> hajm rejadagidan katta.
 
 **M3 — Import va saqlash. BAJARILDI.** Paste → normalizatsiya diff'i → gap bo'linishini tuzatish → dastlabki 3 gapdan darhol boshlash → fonda davom etish. Dars ro'yxati, gap darajasida davom ettirish.
 
@@ -456,7 +565,10 @@ farazini tekshiradigan yagona sinov o'tkazib bo'lmaydigan holatda qolgan edi. Bu
 tezlik **global sozlama emas, darsning xossasi**. Sabab shundaki, ovoz va tezlik audio
 kesh kalitining bir qismi (§3) — ular global bo'lganda sozlamani o'zgartirish butun
 darslarning keshini bir vaqtda yaroqsiz qilardi. Qolgani: klaviatura yorliqlari mashq
-ekranida ko'rsatiladi, bo'sh holatlar barcha ro'yxatlarda bor.
+ekranida ko'rsatiladi, bo'sh holatlar barcha ro'yxatlarda bor — ro'yxatlarda umumiy
+`EmptyState` komponenti bilan, Natijalar ekranida esa o'z paneli bilan: u ro'yxat emas,
+va bo'sh holati "dars yo'q" emas, "shu seansda xato qayd etilmadi" degan BOSHQA gapni
+aytadi.
 
 ---
 
@@ -464,7 +576,7 @@ ekranida ko'rsatiladi, bo'sh holatlar barcha ro'yxatlarda bor.
 
 **`npm test` = `tsc --noEmit` + Vitest.** Uchta loyiha: `core`, `server`, `client` — sof
 mantiq testlari React plagini va `/api` proksisini tortib kelmasligi uchun alohida.
-Hozirgi holat: 15 fayl, 451 test, hammasi o'tadi.
+Hozirgi holat: 15 fayl, 459 test, hammasi o'tadi.
 
 `client` loyihasi `AudioManager` uchun bor — u brauzer API'lariga tayanadi. `jsdom`
 ATAYIN qo'shilmagan: kerak bo'lgani `window.AudioContext` va `fetch`, ikkalasi ham testda
@@ -474,7 +586,7 @@ qo'lda qo'yiladi. Shu bilan §1 dagi "ortiqcha paket yo'q" qoidasi buzilmaydi.
 - `normalize`: `He said, "I don't know—maybe."` natijasida `0x20–0x7E` dan tashqari belgi **qolmaydi**; `café naïve` → `cafe naive`; ketma-ket probellar siqiladi; o'zgargan belgilar ro'yxati qaytariladi.
 - `splitSentences`: `"Mr. Smith paid $1.50. He left."` → **2** ta gap (qisqartma birlashtirish ishlaydi); hech bir segmentda bosh/oxirgi bo'shliq **qolmaydi**; `"First line\nsecond line."` → 2 ta gap, `\n` siz.
 - `tokenize`: `Don't stop - it's fine.` da offsetlar to'g'ri; `US` → bitta token; `3D-printed` da token `D-printed` dan boshlanishi **hujjatlashtirilgan** holat sifatida tasdiqlanadi.
-- `filename`: `The`→`the.mp3`; `US`→`us@caps.mp3`; `don't` va `don-t` → **turli** fayllar; `-25%` → `@` yorlig'i.
+- `filename`: `The`→`the.mp3`; `US`→`us@caps.mp3`; `don't` va `don-t` → **turli** fayllar; `-25%` → `@` yorlig'i. Shu yerda `overrides.ts` ham qoplanadi: jadval bo'ylab aylanib HAR BIR kalit uchun `synthTextFor` tekshiriladi, kalitlar kichik harfli ekani va to'qqiztaligi mixlanadi — ya'ni jadvaldan kalit tushib qolsa test qizaradi (§10 dagi "ikkalasi ham testlar bilan qoplangan" da'vosi shu).
 - `typing`:
   - `t` target `T` ga qarshi → **xato**, kursor turadi (qat'iy bosh harf);
   - har so'z boshida aynan bitta `playWord`;
@@ -494,14 +606,15 @@ qo'lda qo'yiladi. Shu bilan §1 dagi "ortiqcha paket yo'q" qoidasi buzilmaydi.
 - `words.length = 500` → 400;
 - 0 baytga qisqartirilgan MP3 kesh urishi deb hisoblanmaydi va qayta sintez qilinadi (avval bu qo'lda tekshiriladigan band edi).
 
-Yuqoridagi ro'yxat dastlabki rejadan qolgan. Undan tashqari beshta fayl bor va ular
+Yuqoridagi ro'yxat dastlabki rejadan qolgan. Undan tashqari OLTITA fayl bor va ular
 umumiy testlarning uchdan birini tashkil qiladi:
 
 - **`audioManager`** (`client`) — guard oynasi, kutish sloti, kechikish byudjeti va "jimlik hech qachon eshitilgan hisoblanmaydi" sharti. §5b dagi `MAX_LAG_MS < 2 × GUARD_MS` invarianti shu yerda mixlangan.
 - **`stats`** — butun ombor: buzuq payloadni tiklash, kvota siqilishi, eksport/import, seriya, va `audioComparison` ning ustunlarga ajratishi (jumladan eski yozuv "ovozsiz" ustuniga TUSHMASLIGI).
-- **`session`** — seans chegaralari va `clampIndex`; tugagan dars 0-indeksdan qayta boshlanishi (§7).
+- **`session`** — seans chegaralari va `clampIndex`; tugagan dars 0-indeksdan qayta boshlanishi; bo'sh seans darvozasi — hammasi `Escape` bilan tashlangan seans BO'SH hisoblanishi (§7).
 - **`keyboard`** — modifikatorli tugmalar, IME, va `Shift+Tab` ning to'xtatilmasligi (§4).
 - **`lessons`** — dars CRUD'i va buzuq yozuvga chidamlilik.
+- **`ttsClient`** (`server`) — klient↔server sxema chegarasi `app.inject` bilan: klient yuboradigan tana serverning validatsiyasidan o'tadimi. Bu ikki tomonni bir vaqtda ushlaydigan yagona test, shuning uchun `server` loyihasida turadi. Shu yerda `useTypingSession.ts` va `Import.tsx` ning MANBA MATNI ham o'qiladi — `sanitizeVoice` bir marta chaqirilishi va fon bayrog'i to'g'ri joyda turishi hisoblab tekshiriladi. Bu xulq-atvor testi emas, chok qoidasining qorovuli.
 
 **Tarmoqli smoke** (`npm run smoke`, `npm test` ichida emas — Microsoft endpointiga bog'liq bo'lgani uchun): 2 ta so'z sintez qilinadi, `audio-words/` da 2 ta MP3 (>1 KB) paydo bo'ladi, **pastki papka yaratilmaydi**, ikkinchi chaqiruv sintezsiz o'tadi.
 
@@ -515,16 +628,21 @@ umumiy testlarning uchdan birini tashkil qiladi:
 
 ### Qoplanmagan joylar
 
-Uchta joy testsiz va buni yashirmaslik kerak:
+Qoplama uch darajada: XULQ-ATVOR testi (eng kuchli), MANBA MATNI testi (chok qoidasini
+hisoblab tekshiradi), va umuman qoplanmagan. Farqni yashirmaslik kerak, chunki
+"qoplangan" so'zi uchalasiga ham qo'llanganda ma'nosini yo'qotadi.
 
-- **`useTypingSession.ts`** — reducer bilan audio orasidagi chok. Ikkala tomon alohida yaxshi qoplangan, ularni ulaydigan qatlam esa umuman qoplanmagan. Loyihadagi eng nozik kod aynan shu yerda: epoch qalqoni, effekt yuborish, statistikaga yozish. Qo'lda E2E ning 4, 5 va 6-bandlari shu faylni tekshiradi.
-- **`webSpeech.ts`** — zaxira zanjiri. E2E 5-band uni qo'lda tekshiradi AYNAN shuning uchun testsiz. `client` loyihasida `speechSynthesis` ni ham qo'lda qo'yish bilan qoplasa bo'ladi.
-- **`AudioManager` ning qolgan yarmi** — `unlockAudio`, `prefetch`, `checkServer` va MP3 yuklab olish yo'li.
+- **`useTypingSession.ts`** — reducer bilan audio orasidagi chok, loyihadagi eng nozik kod: epoch qalqoni, effekt yuborish, statistikaga yozish. **Xulq-atvor testi yo'q** (DOM stendi kerak bo'lardi). Qisman himoyalangan: `ttsClient` manba matnini tekshiradi, va bo'sh seans darvozasi kabi TESTLANADIGAN qarorlar `src/core` ga sof funksiya bo'lib chiqariladi (`hasWrittenSentence` — §7). Chokning o'zi qo'lda E2E ning 4, 5 va 6-bandlari bilan tekshiriladi.
+- **`webSpeech.ts`** — zaxira zanjiri, umuman testsiz. E2E 5-band uni qo'lda tekshiradi AYNAN shuning uchun. `client` loyihasida `speechSynthesis` ni ham qo'lda qo'yish bilan qoplasa bo'ladi.
+- **`AudioManager` ning `unlockAudio` va `checkServer`** — umuman chaqirilmaydi.
+- **`prefetch` va MP3 yuklab olish yo'li — qoplanmagan EMAS, lekin o'z testi ham yo'q.** `audioManager` testining `beforeEach` i har safar `prefetch` chaqiradi va `loadBuffer → fetch → decodeAudioData → findSoundStart` zanjiri to'liq yuriydi; guard testlari keshning to'lganiga tayangani uchun bu yo'l jimgina buzilsa ular qizaradi. Xato tarmog'i (fayl ham, brauzer sintezi ham ishlamasa `onFailed`) esa to'g'ridan-to'g'ri tekshiriladi. Qoplanmagani — `prefetch` ning O'Z shartnomasi: dublikatlarni tashlash, `isValidWord` filtri, `serverAvailable` false bo'lganda so'rov yubormaslik.
 
 Ekranlar va komponentlar esa **ataylab** testsiz: ular uchun DOM stendi kerak, ya'ni
 `jsdom`. §1 dagi "ortiqcha paket yo'q" qoidasi bu yerda qamrovdan qimmatroq — chunki
 ekranlar chizadigan mantiq allaqachon `src/core` va `src/store` ga chiqarilgan va
-o'sha yerda qoplangan. Qoladigan xavf — ulash xatolari, ular uchun qo'lda E2E bor.
+o'sha yerda qoplangan. Yagona istisno — `Import.tsx`, undan ham faqat manba matni
+o'qiladi (fon bayrog'i to'g'ri joyda turibdimi). Qoladigan xavf — ulash xatolari,
+ular uchun qo'lda E2E bor.
 
 ---
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   clampIndex,
+  hasWrittenSentence,
   SESSION_MAX_MS,
   SESSION_MAX_SENTENCES,
   sessionShouldEnd,
@@ -88,5 +89,39 @@ describe('boshlanish indeksi', () => {
     // Yaxlitlangandan KEYIN ham "tugadi" belgisi belgiligicha qoladi.
     expect(clampIndex(9.9, 10)).toBe(9)
     expect(clampIndex(10.9, 10)).toBe(0)
+  })
+})
+
+describe("bo'sh seans darvozasi", () => {
+  it("bitta ham yozuv bo'lmasa false", () => {
+    expect(hasWrittenSentence([])).toBe(false)
+  })
+
+  it('HAMMASI Escape bilan tashlangan seans BO\'SH hisoblanadi', () => {
+    // Nuqsonning o'zi: `records.length` ga qaralsa bu seans "bo'sh emas"
+    // ko'rinardi va omborga `activeMs: 0`, `netWpm: 0`, `accuracy: 0` bo'lib
+    // yozilardi — PLAN §7 oldini olmoqchi bo'lgan aynan o'sha ifloslanish.
+    expect(hasWrittenSentence([{ skipped: true }])).toBe(false)
+    expect(
+      hasWrittenSentence([
+        { skipped: true },
+        { skipped: true },
+        { skipped: true },
+        { skipped: true },
+        { skipped: true },
+      ]),
+    ).toBe(false)
+  })
+
+  it('bitta yozilgan gap yetarli', () => {
+    expect(hasWrittenSentence([{ skipped: false }])).toBe(true)
+  })
+
+  it("aralash seans — yozilgan gap bo'lsa seans yoziladi", () => {
+    expect(hasWrittenSentence([{ skipped: true }, { skipped: false }])).toBe(true)
+    expect(hasWrittenSentence([{ skipped: false }, { skipped: true }])).toBe(true)
+    expect(
+      hasWrittenSentence([{ skipped: true }, { skipped: false }, { skipped: true }]),
+    ).toBe(true)
   })
 })

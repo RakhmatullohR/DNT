@@ -48,3 +48,18 @@ export function clampIndex(value: number, total: number): number {
   if (!Number.isFinite(index) || index < 0) return 0
   return index >= total ? 0 : index
 }
+
+/**
+ * Seansda ROSTDAN yozilgan gap bormi — bo'sh seans darvozasi shu javobga tayanadi (PLAN §7).
+ *
+ * `skipped` (Escape) yozuvlar seans HAJMINI yeydi (`sessionShouldEnd` dagi `done`),
+ * lekin yig'indiga kirmaydi (PLAN §6a). Ya'ni faqat yozuvlar SONIGA qaralsa, hammasi
+ * Escape bilan tashlangan seans ham "bo'sh emas" ko'rinardi va omborga `activeMs: 0`,
+ * `netWpm: 0`, `accuracy: 0` bo'lgan seans yozilardi — PLAN oldini olmoqchi bo'lgan
+ * aynan o'sha ifloslanish.
+ *
+ * Argument ataylab MINIMAL strukturaviy tip: `core` `store` ga bog'lanmaydi (PLAN §1).
+ */
+export function hasWrittenSentence(records: readonly { skipped: boolean }[]): boolean {
+  return records.some((record) => !record.skipped)
+}

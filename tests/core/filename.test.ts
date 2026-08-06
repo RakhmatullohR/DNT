@@ -11,6 +11,7 @@ import {
   sanitizeVoice,
   synthTextFor,
 } from '../../shared/filename.ts'
+import { OVERRIDES } from '../../shared/overrides.ts'
 
 // Standartdan farq qiladigan ovoz — yorliq mantiqini tekshirish uchun.
 const OTHER_VOICE = 'en-GB-SoniaNeural'
@@ -328,5 +329,40 @@ describe('synthTextFor', () => {
   it('sintez matni fayl nomiga ta\'sir qilmaydi', () => {
     expect(audioFilename('read')).toBe('read.mp3')
     expect(synthTextFor('read')).toBe('reed')
+  })
+})
+
+describe('OVERRIDES jadvali — TO\'LIQ qoplama (PLAN §3, §10)', () => {
+  // PLAN §3 "to'qqiz kalit" deb da'vo qiladi — ro'yxat shu yerda ANIQ yozilgan,
+  // shunda kalit tushib qolsa yoki nomi o'zgarsa test qizaradi.
+  const KUTILGAN_KALITLAR = ['read', 'lead', 'live', 'wind', 'tear', 'row', 'bow', 'sow', 'close']
+
+  it('kutilgan to\'qqiz kalitning hammasi jadvalda bor', () => {
+    for (const kalit of KUTILGAN_KALITLAR) {
+      expect(Object.keys(OVERRIDES), `kalit: ${kalit}`).toContain(kalit)
+    }
+    expect(Object.keys(OVERRIDES)).toHaveLength(KUTILGAN_KALITLAR.length)
+  })
+
+  it('HAR BIR kalit uchun `synthTextFor` jadvaldagi qiymatni qaytaradi', () => {
+    // Jadval bo'ylab aylanamiz — yangi kalit qo'shilsa ham avtomatik qoplanadi.
+    for (const [kalit, qiymat] of Object.entries(OVERRIDES)) {
+      expect(synthTextFor(kalit), `kalit: ${kalit}`).toBe(qiymat)
+    }
+  })
+
+  it('jadval kalitlari DOIM kichik harfli', () => {
+    // Qisqartma tekshiruvi overrides'dan OLDIN turadi, ya'ni katta harfli kalitga
+    // hech qachon yetib borilmasdi (PLAN §3).
+    for (const kalit of Object.keys(OVERRIDES)) {
+      expect(kalit, `kalit: ${kalit}`).toBe(kalit.toLowerCase())
+    }
+  })
+
+  it('bosh harfli shakl ham jadvalga tushadi', () => {
+    for (const [kalit, qiymat] of Object.entries(OVERRIDES)) {
+      const boshHarfli = kalit[0]!.toUpperCase() + kalit.slice(1)
+      expect(synthTextFor(boshHarfli), `so'z: ${boshHarfli}`).toBe(qiymat)
+    }
   })
 })

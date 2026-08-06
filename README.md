@@ -108,21 +108,62 @@ Matn ekranda **ko'rinib turadi**, ya'ni mashqni ovozsiz ham bajarish mumkin. Dem
 vazifa uchun majburiy emas — u faqat qo'shimcha. Loyihaning butun pedagogik da'vosi
 shu oqimning e'tiborga olinishiga tayanadi, va buni tekshirmasdan bilib bo'lmaydi.
 
+**Boshlashdan OLDIN (uchalasi ham majburiy):**
+
+1. **JSON eksport qiling va sanasi bilan saqlang** (Statistika → JSON eksport). Bu
+   boshlang'ich chegara belgisi. Omborni **tozalamang**: `clearStats()` kunlik jadval,
+   seriya va so'z reytingini ham o'chiradi, JSON import esa birlashtirmaydi —
+   **almashtiradi**, ya'ni keyin eski zaxirani qaytarish tajriba ma'lumotini yo'q qiladi.
+2. **Bitta dars tanlang, kamida 140 gapli** (afzali 200+) va butun tajriba davomida
+   undan chiqmang. Ikki sabab: ovoz va tezlik darsning xossasi, ya'ni dars almashsa
+   matn qiyinligi ham, ovoz ham birga o'zgaradi va effektni ajratib bo'lmaydi; ikkinchidan
+   tugagan dars 0-indeksdan qayta boshlanadi va takroriy matn ikkinchi safar tezroq
+   teriladi.
+3. **Kutish darajasini belgilang.** Sakkiz kunlik tajriba faqat **~15% dan katta** effektni
+   ishonchli tutadi. 5% farqni ko'rmoqchi bo'lsangiz — 5–8 hafta rejalashtiring.
+
 **Protokol:**
 
-1. Bir hafta davomida kunma-kun almashtiring: bir kun ovoz **yoqiq**, ertasi **o'chiq**.
-   Almashtirgich — mashq ekranidagi ovoz tugmasi.
-2. Har kuni **taxminan bir xil hajmda** matn tering (kamida 20 tadan gap kerak, aks holda
-   xulosa shovqin bo'ladi).
-3. Hafta oxirida **Statistika → "ovozli / ovozsiz taqqoslash"** bo'limiga qarang.
+1. **Sakkiz kun** davomida kunma-kun almashtiring: bir kun ovoz **yoqiq**, ertasi
+   **o'chiq** (ABABABAB). Almashtirgich — mashq ekranidagi ovoz tugmasi.
+   Sakkiz, yetti emas: toq kunda ustunlar nomutanosib chiqadi (4 kun vs 3 kun).
+2. **Kun tashlab ketmang.** Almashtirish muvozanati buzilsa, hafta davomidagi tabiiy
+   tezlashish natijaga siljish qo'shadi.
+3. Har kuni **taxminan bir xil hajmda** matn tering — bir seans (20 gap) yetarli.
+4. **Har kuni mashq ekranida "TTS server ulanmadi" ogohlantirishi yo'qligini tekshiring.**
+   Server tushib qolgan kunda gaplar baribir "ovoz yoqiq" deb yoziladi, lekin ovoz
+   chiqmaydi — o'sha kun hisobga kirmaydi.
+5. Tajriba oxirida **yana JSON eksport qiling** va tahlilni o'sha fayl ustida bajaring.
 
 **Qanday o'qish kerak:**
 
+Ekrandagi **Statistika → "ovozli / ovozsiz taqqoslash"** bo'limi butun tarixni oladi va
+tarqalish ko'rsatmaydi, shuning uchun u **qaror uchun emas** — faqat gaplar yozilayotganini
+va `on`/`off` nisbatini kuzatish uchun. Qaror eksport fayli ustida chiqariladi:
+`at >= tajriba_boshlangan_vaqt` bo'yicha filtrlang, so'ng **har kun uchun bitta
+`activeMs` bo'yicha og'irlangan o'rtacha** oling (8 ta son) va shularni taqqoslang.
+To'g'ri tahlil birligi — **kun, gap emas**: gaplar bir kun ichida ketma-ket teriladi va
+mustaqil emas, gap darajasida t-test p-qiymatni 2–5 barobar sun'iy kichraytiradi.
+
 | Natija | Ma'nosi |
 |---|---|
-| wpm va aniqlik farqi **sezilarli** | Audio qayta ishlanyapti — mexanika ishlayapti. |
-| farq **deyarli yo'q** | Audio e'tiborga olinmayapti. Yangi imkoniyat qurishdan oldin mexanikani qayta ko'rib chiqing. |
-| ovoz bilan **yomonroq** | Audio chalg'ityapti. Guard/tezlik sozlamalarini ko'ring. |
+| farq **15% dan katta** | Audio qayta ishlanyapti — mexanika ishlayapti. |
+| farq **15% dan kichik** | **Xulosa chiqarib bo'lmaydi.** Bu "audio ishlamayapti" emas, "o'lchay olmadik" degani — tajriba bu hajmdagi effektni ko'ra olmaydi. Davom ettiring yoki mashq hajmini oshiring. |
+| ovoz bilan **yomonroq** | Avval ifloslanishni tekshiring (pastga qarang). Tasdiqlansagina: audio chalg'ityapti, guard/tezlik sozlamalarini ko'ring. |
+
+**Shovqin oralig'i.** Haqiqiy farq **nol** bo'lganda ham sakkiz kunlik ma'lumotda ekran
+uchdan bir hollarda ±2 wpm dan katta farq ko'rsatadi, oltidan bir hollarda esa u
+manfiy tomonga tushadi. Ya'ni "±2 wpm" — shovqin, signal emas. Aniqlik uchun ham
+shunday: ±1.7–2.5% ichidagi har qanday qiymat shovqin, garchi ekran uni bir kasr
+xonasi bilan chizsa ham.
+
+**Ifloslanishni tekshiring.** Taqqoslash butun tarixni oladi, ovoz holati esa standart
+bo'yicha **yoqiq**. Demak tajribadan oldin qilingan mashq "ovozli" ustuniga tushadi va
+natijani buzadi — sinovda bu haqiqiy +4 wpm effektni ko'rinadigan −7.5 wpm ga
+aylantirgan, ya'ni **ishorani ag'dargan**. Ikki belgi:
+- `on` / `off` gaplar soni nisbati 1:1 dan uzoq bo'lsa (kutilgani ~80/80);
+- eski mashq tarixingiz bor-u `noma'lum` soni 0 bo'lsa.
+Ikkalasida ham eksport faylini sana bo'yicha filtrlash **shart**.
 
 Ovoz holati **gap darajasida** yoziladi, shuning uchun seans o'rtasida almashtirsangiz ham
 hisob to'g'ri qoladi. Bu maydon qo'shilishidan **oldingi** gaplarda holat noma'lum — ular

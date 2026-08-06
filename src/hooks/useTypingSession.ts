@@ -29,6 +29,7 @@ import { mapKeydown, shouldPreventDefault } from '../core/keyboard.ts'
 import { computeMetrics } from '../core/metrics.ts'
 import {
   clampIndex,
+  hasWrittenSentence,
   SESSION_MAX_MS,
   SESSION_MAX_SENTENCES,
   sessionShouldEnd,
@@ -299,8 +300,12 @@ export function useTypingSession(lesson: Lesson): TypingSession {
       audioManager.stopAll()
 
       const records = recordsRef.current
-      if (records.length === 0) {
-        // Bitta ham gap yozilmagan seans statistikani faqat ifloslantirardi.
+      if (!hasWrittenSentence(records)) {
+        // Bitta ham gap YOZILMAGAN seans statistikani faqat ifloslantirardi.
+        // Yozuvlar SONIGA emas, `skipped` bo'lmaganlariga qaraladi: Escape bilan
+        // tashlangan gap ham `recordsRef` ga tushadi, lekin yig'indiga kirmaydi
+        // (PLAN §6a) — ya'ni hammasi tashlangan seans omborga `activeMs: 0`,
+        // `netWpm: 0`, `accuracy: 0` bo'lib yozilardi.
         navigate('/', { replace: true })
         return
       }
