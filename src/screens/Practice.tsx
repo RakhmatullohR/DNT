@@ -12,6 +12,7 @@ import { Link, useParams } from 'react-router-dom'
 
 import { Button } from '../components/Button.tsx'
 import type { TypingState } from '../core/types.ts'
+import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
 import type { BlockedKey } from '../hooks/useTypingSession.ts'
 import { useTypingSession } from '../hooks/useTypingSession.ts'
 import type { Lesson } from '../store/lessons.ts'
@@ -41,6 +42,7 @@ const LINK_BTN_GHOST = `${LINK_BTN_BASE} border-[#22303d] text-[#c6d3de] hover:b
 /** Yorliqlar: bosishlarni HOOK bajaradi, bu yerda faqat hujjatlashtiriladi (PLAN §4). */
 const SHORTCUTS: readonly { key: string; text: string }[] = [
   { key: 'Enter', text: 'keyingi gap' },
+  { key: 'Ctrl+Space', text: "so'zni qaytarish" },
   { key: 'Tab', text: 'gapni qaytadan' },
   { key: 'Esc', text: 'gapni tashlash' },
 ]
@@ -132,6 +134,12 @@ function Bar({ value, color }: { value: number; color: string }) {
  * komponent QAYTA ULANADI. `nonce` aynan shuning uchun bor: ketma-ket bir xil
  * noto'g'ri tugma bosilganda matn o'zgarmaydi va React hech narsani yangilamas,
  * qayta ulanish esa quyidagi chaqnashni boshidan qo'yadi.
+ *
+ * SHU SABABLI butunlay `aria-hidden`. Komponent jonli hudud (`aria-live`)
+ * ICHIDA turadi va qayta ulanish DOM mutatsiyasi hisoblanadi: bir xil xato
+ * tugma ketma-ket bosilganda ekran o'quvchi bir xil xabarni har safar qaytadan
+ * o'qib, foydalanuvchini bosib ketardi. Jonli hududga o'zgarmas qisqa matnni
+ * ota komponent alohida beradi — matn o'zgarmasa e'lon takrorlanmaydi.
  */
 function BlockedHint({ blocked, expected }: { blocked: BlockedKey; expected: string | undefined }) {
   const [settled, setSettled] = useState(false)
@@ -158,6 +166,7 @@ function BlockedHint({ blocked, expected }: { blocked: BlockedKey; expected: str
 
   return (
     <div
+      aria-hidden="true"
       className={[
         'flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-control border border-[#ff6b6b]/40 px-4 py-3',
         'origin-left transition-all duration-300 ease-out motion-reduce:transition-none',
@@ -191,14 +200,28 @@ function BlockedHint({ blocked, expected }: { blocked: BlockedKey; expected: str
  * nuqtalari bo'yicha bo'lgani uchun bu yerda mos kelmasdi; matn `normalize.ts`
  * dan keyin ASCII bo'lgani uchun ikkalasi amalda bir xil natija beradi.
  */
-function Sentence({ state, blocked }: { state: TypingState; blocked: BlockedKey | null }) {
+function Sentence({
+  state,
+  blocked,
+  sentenceNo,
+  sentenceTotal,
+}: {
+  state: TypingState
+  blocked: BlockedKey | null
+  sentenceNo: number
+  sentenceTotal: number
+}) {
   const chars = state.target.split('')
   const caretColor = blocked === null ? '#5ee6c1' : '#ff6b6b'
 
   return (
     <>
-      {/* Belgilarga bo'lingan matnni ekran o'quvchisi harflab o'qib chiqardi. */}
+      {/* Belgilarga bo'lingan matnni ekran o'quvchisi harflab o'qib chiqardi.
+          `lang="en"` shunga qaramay qo'yilgan: sahifa tili o'zbekcha, matn esa
+          inglizcha — brauzerning matn qayta ishlashi (tanlash, tarjima, izlash)
+          to'g'ri tilga tayanishi kerak. */}
       <div
+        lang="en"
         aria-hidden="true"
         className="font-mono text-[21px] leading-[1.8] break-words whitespace-pre-wrap sm:text-[25px]"
       >
@@ -290,12 +313,27 @@ function Sentence({ state, blocked }: { state: TypingState; blocked: BlockedKey 
         ) : null}
       </div>
 
-      <p className="sr-only">{state.target}</p>
+      {/* Ekran o'quvchi uchun YAGONA matn manbai.
+          `aria-live` SHART: `Enter` bosilgach gap jimgina almashardi va ekran
+          o'quvchi endi nima terish kerakligini umuman aytmasdi — fokus o'sha
+          maydonda qolgani uchun brauzer ham hech narsa e'lon qilmasdi.
+          Raqam ham shu yerda: gap almashgani matnning o'zidan bilinmasligi
+          mumkin (bir xil takrorlangan gaplar).
+          Ikki til ikki `span` da: o'zbekcha raqamni inglizcha ovoz bilan o'qish
+          tushunarsiz chiqadi. */}
+      <p className="sr-only" aria-live="polite">
+        <span lang="uz">
+          {sentenceNo} / {sentenceTotal}-gap:{' '}
+        </span>
+        <span lang="en">{state.target}</span>
+      </p>
     </>
   )
 }
 
 function NotFound({ message }: { message: string }) {
+  useDocumentTitle('Topilmadi')
+
   return (
     <div className="mx-auto w-full max-w-3xl">
       <div className={`${PANEL} p-8 text-center sm:p-12`}>
@@ -326,6 +364,10 @@ function Session({ lesson }: { lesson: Lesson }) {
   const { state, blocked, awaitingNext } = session
   const expected = state.target[state.cursor]
 
+  const title = lesson.title === '' ? 'Nomsiz dars' : lesson.title
+  // Dars nomi eng oldinda: yorliq torayganda brauzer sarlavhaning OXIRINI kesadi.
+  useDocumentTitle(`${title} — mashq`)
+
   // Ekran ochilishi bilan fokus mashq maydonida bo'lsin: usiz foydalanuvchi
   // qayerga yozishni bilmaydi, fokus halqasi esa faqat bosilgandan keyin
   // chiqadi. `preventScroll` SHART — usiz brauzer maydonni ko'rinishga tortib,
@@ -345,26 +387,44 @@ function Session({ lesson }: { lesson: Lesson }) {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
           <div className={LABEL}>mashq</div>
-          <h1 className="mt-2 truncate font-mono text-[21px] font-semibold text-[#e6edf3]">
-            {lesson.title === '' ? 'Nomsiz dars' : lesson.title}
+          {/* `lang` SHARTLI: dars nomi odatda inglizcha (matndan olinadi), lekin
+              nomsiz darsda o'rniga o'zbekcha "Nomsiz dars" chiqadi — qat'iy
+              `lang="en"` uni ingliz fonetikasida o'qitardi. */}
+          <h1
+            lang={lesson.title === '' ? undefined : 'en'}
+            className="mt-2 truncate font-mono text-[21px] font-semibold text-[#e6edf3]"
+          >
+            {title}
           </h1>
           <p className="mt-1.5 font-mono text-[11px] text-[#7d8b9c] tabular-nums">
             dars ichida {session.sentenceIndex + 1} / {lesson.sentences.length}-gap
           </p>
         </div>
-        <Link
-          to="/"
-          className="inline-flex min-h-11 items-center font-mono text-[11px] text-[#7d8b9c] underline decoration-white/20 underline-offset-4 transition-colors duration-150 ease-out hover:text-[#e6edf3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ee6c1]"
-        >
-          Mashqni to&apos;xtatish
-        </Link>
+        {/* Havolaning O'ZI o'zgarmaydi: seans komponent uzilganda yoziladi
+            (`useTypingSession` dagi tozalash effekti), ya'ni bu yerda hech
+            qanday qo'shimcha ishlov kerak emas. Izoh esa SHART — aks holda
+            foydalanuvchi yozganini yo'qotishdan qo'rqib bosmasdi. */}
+        <div className="flex flex-col items-end gap-0.5">
+          <Link
+            to="/"
+            className="inline-flex min-h-11 items-center font-mono text-[11px] text-[#7d8b9c] underline decoration-white/20 underline-offset-4 transition-colors duration-150 ease-out hover:text-[#e6edf3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ee6c1]"
+          >
+            Mashqni to&apos;xtatish
+          </Link>
+          <span className="font-mono text-[11px] text-[#7d8b9c]">
+            yozilgan gaplar saqlanadi
+          </span>
+        </div>
       </div>
 
       {/* HUD */}
       <section className={`${PANEL} mt-5 p-4 sm:p-5`}>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          {/* Yorliq "gap" EMAS: yuqorida "dars ichida N / M-gap" turibdi va
+              ikkovi bir xil atalsa bitta ekranda ikki xil "gap" hisobi paydo
+              bo'lardi. Bu yerdagi son SEANS ichidagi o'rin. */}
           <Stat
-            label="gap"
+            label="seansda"
             value={String(session.sentenceNo)}
             unit={`/ ${session.sessionTotal}`}
             color="#e6edf3"
@@ -432,7 +492,12 @@ function Session({ lesson }: { lesson: Lesson }) {
         aria-label="Yozuv maydoni"
         className={`${PANEL} mx-auto mt-4 max-w-3xl p-6 focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f14] focus-visible:outline-none sm:p-8`}
       >
-        <Sentence state={state} blocked={blocked} />
+        <Sentence
+          state={state}
+          blocked={blocked}
+          sentenceNo={session.sentenceIndex + 1}
+          sentenceTotal={lesson.sentences.length}
+        />
       </section>
 
       {/* Balandligi o'zgarmaydi — xabar almashganda ekran sakramasin. Tor
@@ -453,10 +518,31 @@ function Session({ lesson }: { lesson: Lesson }) {
             </span>
           </div>
         ) : blocked !== null ? (
-          <BlockedHint key={blocked.nonce} blocked={blocked} expected={expected} />
+          <>
+            <BlockedHint key={blocked.nonce} blocked={blocked} expected={expected} />
+            {/* Jonli hududdagi YAGONA o'qiladigan matn. Kalitlanmagan va
+                chaqnamaydi: ketma-ket bir xil xatoda matn o'zgarmaydi, ya'ni
+                DOM ham o'zgarmaydi va e'lon takrorlanmaydi. */}
+            <p className="sr-only">
+              {expected === undefined
+                ? 'Xato belgi bosildi.'
+                : `Xato belgi bosildi. Kutilgan belgi: ${keyName(expected)}`}
+            </p>
+          </>
+        ) : session.skipNotice ? (
+          <p className="px-1 py-3 font-mono text-[13px] text-[#e0cfa8]">
+            Gap tashlandi — dars oxirida qaytadi.
+          </p>
         ) : (
           <p className="px-1 py-3 font-mono text-[13px] text-[#7d8b9c]">
-            Eshitgan so&apos;zingizni yozing. Noto&apos;g&apos;ri belgida kursor joyida turadi.
+            {/* Ilgari bu yerda "Eshitgan so'zingizni yozing" turardi — mexanikani
+                TESKARI tushuntirardi: so'z eshitilgani uchun yozilmaydi, aksincha
+                birinchi harfi yozilgani uchun eshitiladi (`core/typing.ts`).
+                Matn qasddan qisqa: bu hudud balandligi mixlangan (yuqoriga
+                qarang) va uzun ko'rsatma ikkinchi qatorga tushib, xabar
+                almashganda ekranni sakratardi. */}
+            Har so&apos;zning birinchi harfini yozganda o&apos;sha so&apos;z bir marta
+            o&apos;qiladi. <kbd className={KBD}>Ctrl+Space</kbd> — qaytarish.
           </p>
         )}
       </div>
@@ -481,6 +567,22 @@ function Session({ lesson }: { lesson: Lesson }) {
             {session.audioEnabled ? 'Ovoz yoniq' : "Ovoz o'chiq"}
           </Button>
 
+          {/* Yorliqni bilmaydigan yoki sichqoncha bilan ishlaydigan foydalanuvchi
+              uchun. Aynan `Ctrl+Space` bilan bir xil funksiyani chaqiradi va u
+              ham statistikaga tegmaydi.
+              Bosgandan keyin fokus tugmada qoladi — bu ATAYIN: yozuv maydoniga
+              zo'rlab qaytarish klaviaturadagi foydalanuvchining fokusini
+              o'g'irlagan bo'lardi, tinglovchi esa `window` da o'tirgani uchun
+              yozish baribir davom etaveradi. */}
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!session.audioEnabled}
+            onClick={session.replayWord}
+          >
+            So&apos;zni qaytarish
+          </Button>
+
           {/* Umumiy `ServerBanner` ulanish yo'qligini aytadi; bu belgi esa
               ayni damda QAYSI ovoz eshitilayotganini tugmaning yonida ko'rsatadi. */}
           {session.audioEnabled && !session.serverOk ? (
@@ -490,8 +592,14 @@ function Session({ lesson }: { lesson: Lesson }) {
           ) : null}
         </div>
 
+        {/* Ovoz o'chirilganda `Ctrl+Space` yorlig'i ro'yxatdan chiqariladi:
+            hook uni bunday holatda bajarmaydi (`replayWord` `audioEnabledRef` da
+            to'xtaydi) va yonidagi "So'zni qaytarish" tugmasi ham `disabled`.
+            Ishlamaydigan yorliqni reklama qilish — yolg'on va'da. */}
         <ul className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          {SHORTCUTS.map((item) => (
+          {SHORTCUTS.filter(
+            (item) => session.audioEnabled || item.key !== 'Ctrl+Space',
+          ).map((item) => (
             <li key={item.key} className="flex items-center gap-1.5">
               <kbd className={KBD}>{item.key}</kbd>
               <span className="font-mono text-[11px] text-[#7d8b9c]">{item.text}</span>
@@ -503,7 +611,8 @@ function Session({ lesson }: { lesson: Lesson }) {
       <p className="mt-4 border-t border-[#1d2833] pt-4 font-mono text-[11px] leading-relaxed text-[#7d8b9c]">
         Seans {session.sessionTotal} ta gap yoki 10 daqiqa bilan cheklangan — qaysi biri
         oldin tugasa, natijalar ekrani ochiladi. Tashlangan gap (Esc) statistikaga kirmaydi,
-        qayta boshlangan urinish (Tab) ham yozilmaydi.
+        lekin yo&apos;qolmaydi — dars oxirida qaytadi. Qayta boshlangan urinish (Tab)
+        yozilmaydi.
       </p>
     </div>
   )

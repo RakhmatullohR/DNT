@@ -1,7 +1,7 @@
 // PLAN §9 dagi `typing` ro'yxatining har bir punkti — alohida test.
 
 import { describe, expect, it } from 'vitest'
-import { createState, reduce } from '../../src/core/typing.ts'
+import { createState, reduce, wordTokenAt } from '../../src/core/typing.ts'
 import { mapKeydown } from '../../src/core/keyboard.ts'
 import { IDLE_PAUSE_MS } from '../../src/core/types.ts'
 import type { Effect, KeydownLike, TypingState } from '../../src/core/types.ts'
@@ -532,5 +532,52 @@ describe('reducer POKLIGI', () => {
     const started = reduce(right.state, { type: 'playbackStarted', tokenIndex: 0 }, 2_000)
     expect(started.state.pendingWords).not.toBe(right.state.pendingWords)
     expect(started.state.playedWords).not.toBe(right.state.playedWords)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// `wordTokenAt` — qayta eshitish (`Ctrl+Space`) qaysi so'zni oladi
+// ---------------------------------------------------------------------------
+
+describe('wordTokenAt', () => {
+  it("so'z ICHIDAGI kursor o'sha so'zni beradi", () => {
+    const { tokens } = createState('The cat sat.')
+    // "The" = 0-token, "cat" = 2-token, "sat" = 4-token (oraliqlar `gap`).
+    expect(wordTokenAt(tokens, 0)).toBe(0)
+    expect(wordTokenAt(tokens, 2)).toBe(0)
+    expect(wordTokenAt(tokens, 4)).toBe(2)
+    expect(wordTokenAt(tokens, 8)).toBe(4)
+  })
+
+  it("probel ustidagi kursor OLDINGI so'zni beradi", () => {
+    // Butun mohiyat shu: so'zni yozib bo'lgan zahoti kursor probelga tushadi,
+    // foydalanuvchi esa hozirgina yozgan so'zini eshitmoqchi bo'ladi.
+    const { tokens } = createState('The cat sat.')
+    expect(wordTokenAt(tokens, 3)).toBe(0)
+    expect(wordTokenAt(tokens, 7)).toBe(2)
+  })
+
+  it('gap oxiridagi kursor oxirgi so\'zni beradi', () => {
+    const { tokens } = createState('The cat sat.')
+    // Nuqta ham `gap`: undan keyingi pozitsiya oxirgi so'zga qaytadi.
+    expect(wordTokenAt(tokens, 11)).toBe(4)
+    expect(wordTokenAt(tokens, 12)).toBe(4)
+    expect(wordTokenAt(tokens, 999)).toBe(4)
+  })
+
+  it("so'zdan OLDINGI tinish belgisida hali so'z yo'q — -1", () => {
+    // `"The cat` — birinchi so'z 1-indeksdan boshlanadi (PLAN §4).
+    const { tokens } = createState('"The cat')
+    expect(wordTokenAt(tokens, 0)).toBe(-1)
+    expect(wordTokenAt(tokens, 1)).toBe(1)
+  })
+
+  it("so'zsiz gapda -1", () => {
+    expect(wordTokenAt(createState('...').tokens, 1)).toBe(-1)
+    expect(wordTokenAt(createState('').tokens, 0)).toBe(-1)
+  })
+
+  it('manfiy pozitsiyada -1', () => {
+    expect(wordTokenAt(createState('The cat').tokens, -1)).toBe(-1)
   })
 })

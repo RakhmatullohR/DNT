@@ -68,6 +68,14 @@ export type KeyAction =
   | { type: 'restart' }
   /** `Escape` — gapni tashlab ketish (statistikaga kirmaydi). */
   | { type: 'skip' }
+  /**
+   * `Ctrl+Space` — joriy so'zni QAYTA eshitish.
+   *
+   * Alohida harakat, `event` EMAS: qayta eshitish reducer'dan o'tmasligi kerak.
+   * `playedWords`/`pendingWords`/`keystrokes` ga tegilsa quloq uchun bosilgan
+   * tugma statistikani va ovoz zanjirini o'zgartirib yuborardi.
+   */
+  | { type: 'replay' }
   | { type: 'ignore' }
 
 /** `mapKeydown` uchun DOM'siz kirish — testlarda oddiy obyekt beriladi. */

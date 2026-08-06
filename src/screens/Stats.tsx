@@ -19,6 +19,7 @@ import { BarChart } from '../components/BarChart.tsx'
 import { Button } from '../components/Button.tsx'
 import { EmptyState } from '../components/EmptyState.tsx'
 import { Sparkline } from '../components/Sparkline.tsx'
+import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
 import {
   corruptLessonsBackup,
   discardCorruptLessonsBackup,
@@ -261,6 +262,8 @@ function GateColumn({ title, bucket, accent }: { title: string; bucket: AudioBuc
 type Message = { kind: 'ok' | 'error'; text: string }
 
 export function Stats() {
+  useDocumentTitle('Statistika')
+
   // Ombor holatda saqlanadi: import va o'chirishdan keyin ekran QAYTA o'qishi
   // kerak, render ichidagi to'g'ridan-to'g'ri chaqiriq esa buni qilmaydi.
   const [snapshot, setSnapshot] = useState<Snapshot>(readSnapshot)
@@ -345,7 +348,7 @@ export function Stats() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h1 className={LABEL}>statistika</h1>
+        <h1 className="font-mono text-[21px] font-semibold">statistika</h1>
         <Link
           to="/"
           className="font-mono text-[11px] text-[#7d8b9c] underline decoration-white/20 underline-offset-4 transition-colors hover:text-[#e6edf3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ee6c1]"
@@ -356,7 +359,7 @@ export function Stats() {
 
       {filled ? (
         <>
-          <section className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             <Metric
               label="net wpm"
               value={formatWpm(snapshot.summary.netWpm)}
@@ -381,7 +384,7 @@ export function Stats() {
               color="#6ba8ff"
               hint={`Kuniga ${STREAK_MIN_CORRECT}+ to'g'ri bosish`}
             />
-          </section>
+          </div>
 
           <p className={NOTE}>
             Seriya — kuniga kamida {STREAK_MIN_CORRECT} ta to&apos;g&apos;ri bosish qayd etilgan
@@ -400,7 +403,7 @@ export function Stats() {
                     type="button"
                     onClick={() => setRange(days)}
                     aria-pressed={days === range}
-                    className={`h-7 rounded-xs px-2.5 font-mono text-[11px] font-medium tabular-nums transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5ee6c1] ${
+                    className={`h-8 rounded-xs px-2.5 font-mono text-[11px] font-medium tabular-nums transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0e141c] ${
                       days === range
                         ? 'bg-[#5ee6c1]/15 text-[#5ee6c1]'
                         : 'text-[#7d8b9c] hover:text-[#e6edf3]'
@@ -423,7 +426,7 @@ export function Stats() {
 
             <div className="mt-6">
               <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                <span className={LABEL}>kunlik to&apos;g&apos;ri bosishlar</span>
+                <h3 className={LABEL}>kunlik to&apos;g&apos;ri bosishlar</h3>
                 <span className="font-mono text-[11px] tabular-nums text-[#7d8b9c]">
                   {activeDays} / {series.length} kun chegaradan o&apos;tgan
                 </span>
@@ -433,7 +436,23 @@ export function Stats() {
                   label: shortDay(point.day),
                   value: point.correctKeystrokes,
                 }))}
+                label="kunlik to'g'ri bosishlar"
               />
+              {/* Grafikdagi kunlik yorliqlar `aria-hidden` (`BarChart.tsx`) — ekran
+                  o'quvchiga 30 kunlik ma'lumotdan faqat umumiy xulosa yetib borardi.
+                  Trendni ko'rish shu sahifaning asosiy qiymati, shuning uchun to'liq
+                  jadval matnli muqobil sifatida qo'shiladi. */}
+              <table className="sr-only">
+                <caption>Kunlik to&apos;g&apos;ri bosishlar, kun bo&apos;yicha</caption>
+                <tbody>
+                  {series.map((point) => (
+                    <tr key={point.day}>
+                      <th scope="row">{point.day}</th>
+                      <td>{point.correctKeystrokes}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
 
             <p className={`${NOTE} mt-4`}>
@@ -463,6 +482,7 @@ export function Stats() {
                       value: row.rate * 100,
                     }))}
                     max={100}
+                    label="eng qiyin so'zlar, xato ulushi"
                   />
                 </div>
 
@@ -472,7 +492,7 @@ export function Stats() {
                       key={row.word}
                       className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-baseline gap-3 border-b border-white/[0.04] pb-2 last:border-b-0"
                     >
-                      <span className="truncate font-mono text-[13px] text-[#e6edf3]">
+                      <span lang="en" className="truncate font-mono text-[13px] text-[#e6edf3]">
                         {row.word}
                       </span>
                       <span className="font-mono text-[11px] tabular-nums text-[#7d8b9c]">
@@ -495,12 +515,62 @@ export function Stats() {
             </p>
           </section>
 
+          <section className={`${PANEL} p-5 sm:p-6`}>
+            <h2 className={LABEL}>oxirgi seanslar</h2>
+
+            {recent.length === 0 ? (
+              <p className={`${NOTE} mt-5`}>Seans yozuvlari saqlanmagan.</p>
+            ) : (
+              <ul className="mt-4 space-y-1">
+                {recent.map((session) => (
+                  <li key={session.id}>
+                    <Link
+                      to={`/results/${encodeURIComponent(session.id)}`}
+                      className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-baseline gap-3 rounded-control px-2 py-2 transition-colors hover:bg-white/[0.03] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ee6c1]"
+                    >
+                      <span className="min-w-0">
+                        {/* `lang` SHARTLI: dars nomi odatda inglizcha, lekin
+                            nomsiz seansda o'zbekcha zaxira matn chiqadi. */}
+                        <span
+                          lang={session.lessonTitle === '' ? undefined : 'en'}
+                          className="block truncate font-mono text-[13px] text-[#e6edf3]"
+                        >
+                          {session.lessonTitle === '' ? 'Nomsiz dars' : session.lessonTitle}
+                        </span>
+                        <span className="mt-0.5 block font-mono text-[11px] tabular-nums text-[#7d8b9c]">
+                          {formatDateTime(session.startedAt > 0 ? session.startedAt : session.endedAt)}
+                        </span>
+                      </span>
+                      <span className="font-mono text-[13px] tabular-nums text-[#5ee6c1]">
+                        {formatWpm(session.netWpm)} wpm
+                      </span>
+                      <span className="w-14 text-right font-mono text-[13px] tabular-nums text-[#7d8b9c]">
+                        {formatPercent(session.accuracy)}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {snapshot.stats.sessions.length > SESSION_ROWS ? (
+              <p className={`${NOTE} mt-4`}>
+                Jami {snapshot.stats.sessions.length} ta seans saqlangan, shu yerda oxirgi{' '}
+                {SESSION_ROWS} tasi ko&apos;rsatilgan.
+              </p>
+            ) : null}
+          </section>
+
           {/*
             ⭐ M2/M3 gate (PLAN §8, §10). Rejaning 1-raqamli xatari: matn ko'rinib
             turgani uchun mashqni ovozsiz ham bajarish mumkin, ya'ni audio
             majburiy emas. Butun pedagogik da'vo shu oqimning e'tiborga
             olinishiga tayanadi — va uni tekshirishning yagona yo'li ovozli va
             ovozsiz mashqni yonma-yon qo'yish.
+
+            TARTIB: bu bo'lim ATAYIN "oxirgi seanslar" dan KEYIN turadi — u
+            tekshiruv-tajriba bo'limi, sahifadagi YAGONA interaktiv bo'lim esa
+            "oxirgi seanslar" (har qator natijaga havola).
           */}
           <section className={`${PANEL} p-5 sm:p-6`}>
             <div className="flex flex-wrap items-baseline justify-between gap-3">
@@ -554,47 +624,6 @@ export function Stats() {
               o&apos;sha qarorni qabul qilish uchun.
             </p>
           </section>
-
-          <section className={`${PANEL} p-5 sm:p-6`}>
-            <h2 className={LABEL}>oxirgi seanslar</h2>
-
-            {recent.length === 0 ? (
-              <p className={`${NOTE} mt-5`}>Seans yozuvlari saqlanmagan.</p>
-            ) : (
-              <ul className="mt-4 space-y-1">
-                {recent.map((session) => (
-                  <li key={session.id}>
-                    <Link
-                      to={`/results/${encodeURIComponent(session.id)}`}
-                      className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-baseline gap-3 rounded-control px-2 py-2 transition-colors hover:bg-white/[0.03] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ee6c1]"
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate font-mono text-[13px] text-[#e6edf3]">
-                          {session.lessonTitle === '' ? 'Nomsiz dars' : session.lessonTitle}
-                        </span>
-                        <span className="mt-0.5 block font-mono text-[11px] tabular-nums text-[#7d8b9c]">
-                          {formatDateTime(session.startedAt > 0 ? session.startedAt : session.endedAt)}
-                        </span>
-                      </span>
-                      <span className="font-mono text-[13px] tabular-nums text-[#5ee6c1]">
-                        {formatWpm(session.netWpm)} wpm
-                      </span>
-                      <span className="w-14 text-right font-mono text-[13px] tabular-nums text-[#7d8b9c]">
-                        {formatPercent(session.accuracy)}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {snapshot.stats.sessions.length > SESSION_ROWS ? (
-              <p className={`${NOTE} mt-4`}>
-                Jami {snapshot.stats.sessions.length} ta seans saqlangan, shu yerda oxirgi{' '}
-                {SESSION_ROWS} tasi ko&apos;rsatilgan.
-              </p>
-            ) : null}
-          </section>
         </>
       ) : (
         <EmptyState
@@ -602,7 +631,7 @@ export function Stats() {
           hint="Birinchi seansdan keyin bu yerda wpm trendi, aniqlik, seriya va eng qiyin so'zlar paydo bo'ladi. Boshqa brauzerdan zaxira fayli bo'lsa, uni quyida tiklash mumkin."
           action={
             <Link to="/" className={LINK_PRIMARY}>
-              Darslarga o&apos;tish
+              Darslar
             </Link>
           }
         />

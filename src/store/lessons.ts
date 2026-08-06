@@ -31,6 +31,15 @@ export type Lesson = {
   sentences: string[]
   /** Gap darajasida davom ettirish (PLAN §7): keyingi boshlanadigan gap indeksi. */
   progress: number
+  /**
+   * `Escape` bilan tashlangan gaplar indekslari — dars oxirida shular qaytadi
+   * (`core/session.ts` dagi `nextSentenceIndex`).
+   *
+   * IXTIYORIY: bu maydon keyin qo'shilgan va eski saqlangan darslarda umuman
+   * yo'q. O'qishda (`toLesson`) doim massivga normallashtiriladi, ya'ni
+   * chaqiruvchi kod uchun u amalda majburiy.
+   */
+  skipped?: number[]
   voice: string
   rate: number
 }
@@ -95,9 +104,33 @@ function toLesson(raw: unknown): Lesson | null {
     normalizedText,
     sentences,
     progress: clampProgress(toFiniteNumber(raw['progress'], 0), sentences.length),
+    skipped: toSkipped(raw['skipped'], sentences.length),
     voice: toText(raw['voice'], ''),
     rate: toFiniteNumber(raw['rate'], 0),
   }
+}
+
+/**
+ * Tashlangan gaplar ro'yxatini normallashtiradi: butun son bo'lmagan, chegaradan
+ * chiqqan va takrorlangan indekslar tashlanadi, natija o'sish tartibida qaytadi.
+ *
+ * Buzuq yozuv butun darsni yo'q qilmaydi (`toLesson` dan farqli o'laroq bu yerda
+ * `null` yo'q): ro'yxat qulaylik uchun, dars matni undan muhimroq. Maydonning
+ * o'zi yo'q bo'lsa ham (eski darslar) bo'sh massiv qaytadi.
+ *
+ * Tartib SHART: `nextSentenceIndex` eng kichigini oladi va tartibli ro'yxat
+ * omborda ham o'qishga qulay bo'ladi.
+ */
+function toSkipped(raw: unknown, total: number): number[] {
+  if (!Array.isArray(raw)) return []
+  const seen = new Set<number>()
+  for (const item of raw) {
+    if (typeof item !== 'number' || !Number.isFinite(item)) continue
+    const index = Math.floor(item)
+    if (index < 0 || index >= total) continue
+    seen.add(index)
+  }
+  return [...seen].sort((a, b) => a - b)
 }
 
 /**
@@ -253,6 +286,7 @@ export function saveLesson(lesson: Lesson): void {
   const safe: Lesson = {
     ...lesson,
     progress: clampProgress(lesson.progress, lesson.sentences.length),
+    skipped: toSkipped(lesson.skipped, lesson.sentences.length),
   }
   const stored = readStored()
   const lessons = stored.lessons
@@ -311,6 +345,46 @@ export function setProgress(id: string, sentenceIndex: number): void {
   lessons[index] = {
     ...current,
     progress: clampProgress(sentenceIndex, current.sentences.length),
+  }
+  writeAll(lessons, stored.unknown)
+}
+
+/**
+ * Bitta gap yakunlangandan keyin darsni yangilaydi: davom ettirish nuqtasi VA
+ * tashlangan gaplar ro'yxati.
+ *
+ * Ikkovi BIRGA yoziladi, chunki ular bitta qarorning ikki tomoni: `Escape`
+ * bosilganda gap ro'yxatga tushadi, lekin progress baribir oldinga suriladi
+ * (`nextSentenceIndex` dagi izohga qarang). Alohida ikki chaqiruv omborni ikki
+ * marta o'qib-yozardi va oraliqda dars nomuvofiq holatda qolardi.
+ *
+ * PROGRESS ORQAGA SURILMAYDI. Dars oxirida qaytgan tashlangan gap yozib
+ * tugatilganda `sentenceIndex + 1` saqlangan qiymatdan kichik bo'ladi va oddiy
+ * yozuv foydalanuvchini allaqachon yozib bo'lgan gaplariga qaytarib tashlardi.
+ * Boshidan boshlash `setProgress(id, 0)` orqali ATAYLAB alohida yo'l.
+ *
+ * Dars topilmasa jimgina qaytadi (`setProgress` bilan bir xil qaror):
+ * o'chirilgan darsning tugagan seansi yangi bo'sh yozuv yaratmasligi kerak.
+ */
+export function completeSentence(id: string, sentenceIndex: number, skipped: boolean): void {
+  const stored = readStored()
+  const lessons = stored.lessons
+  const index = lessons.findIndex((lesson) => lesson.id === id)
+  const current = index >= 0 ? lessons[index] : undefined
+  if (current === undefined) return
+
+  const total = current.sentences.length
+  const done = Math.floor(sentenceIndex)
+  if (!Number.isFinite(done) || done < 0 || done >= total) return
+
+  const list = new Set(current.skipped ?? [])
+  if (skipped) list.add(done)
+  else list.delete(done)
+
+  lessons[index] = {
+    ...current,
+    progress: Math.max(current.progress, clampProgress(done + 1, total)),
+    skipped: [...list].sort((a, b) => a - b),
   }
   writeAll(lessons, stored.unknown)
 }

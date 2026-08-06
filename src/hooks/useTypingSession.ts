@@ -18,6 +18,12 @@
 // 3. GAP TUGAGANDA AVTOMATIK O'TISH YO'Q (PLAN §7): `finished` effekti faqat
 //    "Enter kutilmoqda" holatini yoqadi. Avtomatik o'tilsa har gapning oxirgi
 //    so'zi doim yarim eshitilardi.
+//
+// 4. YOZUV VA NAVIGATSIYA AJRATILGAN. Seansni yozish (`recordAndClose`) sof
+//    funksiya, marshrutni esa faqat `endSession` almashtiradi. Sabab: seans
+//    komponent UZILGANDA ham yozilishi kerak ("Mashqni to'xtatish", orqaga,
+//    tab yopilishi), lekin o'sha yo'lda navigatsiya bo'lsa Bosh sahifaga
+//    chiqmoqchi bo'lgan foydalanuvchi natijalar ekraniga uloqtirilardi.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -28,17 +34,17 @@ import { requestBatch } from '../audio/ttsClient.ts'
 import { mapKeydown, shouldPreventDefault } from '../core/keyboard.ts'
 import { computeMetrics } from '../core/metrics.ts'
 import {
-  clampIndex,
   hasWrittenSentence,
+  nextSentenceIndex,
   SESSION_MAX_MS,
   SESSION_MAX_SENTENCES,
   sessionShouldEnd,
 } from '../core/session.ts'
 import { tokenize } from '../core/tokenize.ts'
-import { createState, reduce } from '../core/typing.ts'
+import { createState, reduce, wordTokenAt } from '../core/typing.ts'
 import type { Effect, TypingEvent, TypingState } from '../core/types.ts'
 import type { Lesson } from '../store/lessons.ts'
-import { setProgress } from '../store/lessons.ts'
+import { completeSentence } from '../store/lessons.ts'
 import type { SentenceRecord, SessionRecord, WordStat } from '../store/stats.ts'
 import { recordSession } from '../store/stats.ts'
 
@@ -50,6 +56,23 @@ const TICK_MS = 500
 
 /** Oldindan tayyorlanadigan KEYINGI gaplar soni (PLAN §7 dagi "keyingi 1-2 gap"). */
 const PREFETCH_AHEAD = 2
+
+/**
+ * Server holati seans DAVOMIDA shu oraliqda qayta tekshiriladi.
+ *
+ * Boshlanishida bir marta tekshirish yetarli emas edi: 10 daqiqalik seansning
+ * 3-daqiqasida server o'lsa, "zaxira: brauzer ovozi" belgisi hech qachon
+ * chiqmasdi va har so'z jimgina `speechSynthesis` ga tushardi.
+ *
+ * Nega davriy so'rov, `AudioManager` dan callback emas: callback faqat
+ * TUSHISHNI ko'radi, tiklanishni emas — server qaytganda belgi ekranda abadiy
+ * osilib qolardi. Qolaversa bu yechim `AudioManager` ga umuman tegmaydi.
+ * 60 soniya — `/api/health` ga seansiga ko'pi bilan 10 ta so'rov, ya'ni spam emas.
+ */
+const SERVER_POLL_MS = 60_000
+
+/** Tashlangan gap haqidagi xabar shuncha vaqt jonli hududda turadi. */
+const SKIP_NOTICE_MS = 4_000
 
 /**
  * Oxirgi bosish kursorni SILJITMAGANI haqidagi belgi.
@@ -81,8 +104,12 @@ export type TypingSession = {
   sentenceProgress: number
   /** Vaqt bo'yicha bajarilish ulushi, 0..1. */
   timeProgress: number
+  /** Oxirgi gap `Escape` bilan tashlangani haqidagi qisqa xabar ko'rinib turibdimi. */
+  skipNotice: boolean
   audioEnabled: boolean
   toggleAudio: () => void
+  /** Kursor turgan so'zni qayta o'qitadi (`Ctrl+Space`, ovoz tugmasi yonidagi tugma). */
+  replayWord: () => void
   /** TTS serveri javob beryaptimi (PLAN §1 dagi "TTS server ulanmadi" ogohlantirishi). */
   serverOk: boolean
 }
@@ -162,9 +189,14 @@ export function useTypingSession(lesson: Lesson): TypingSession {
   const voice = sanitizeVoice(lesson.voice)
   const rate = sanitizeRate(lesson.rate)
 
-  // Boshlanish nuqtasi BIR MARTA olinadi: `setProgress` omborni yangilab boradi,
-  // lekin joriy seans o'z hisobini o'zi yuritadi.
-  const [startIndex] = useState(() => clampIndex(lesson.progress, lesson.sentences.length))
+  // Boshlanish nuqtasi BIR MARTA olinadi: `completeSentence` omborni yangilab
+  // boradi, lekin joriy seans o'z hisobini o'zi yuritadi.
+  //
+  // Dars oxiriga yetgan bo'lsa seans boshidan emas, `Escape` bilan tashlangan
+  // gaplarning eng kichigidan boshlanadi (`nextSentenceIndex` dagi izoh).
+  const [startIndex] = useState(() =>
+    nextSentenceIndex(lesson.progress, lesson.sentences.length, lesson.skipped ?? []),
+  )
 
   const [state, setState] = useState<TypingState>(() =>
     createState(lesson.sentences[startIndex] ?? ''),
@@ -176,6 +208,13 @@ export function useTypingSession(lesson: Lesson): TypingSession {
   const progressRef = useRef(progress)
 
   const [blocked, setBlocked] = useState<BlockedKey | null>(null)
+  /**
+   * `Escape` bosilganini E'LON qilish uchun (PLAN §4 dagi "tashlash" harakati).
+   * Usiz ekranda hech narsa o'zgarmasdi — gap jimgina almashardi va foydalanuvchi
+   * nima bo'lganini tushunmasdi.
+   */
+  const [skipNotice, setSkipNotice] = useState(false)
+  const skipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [audioEnabled, setAudioEnabled] = useState(readAudioEnabled)
   const [serverOk, setServerOk] = useState(true)
   const [now, setNow] = useState(() => Date.now())
@@ -292,12 +331,31 @@ export function useTypingSession(lesson: Lesson): TypingSession {
   // Seansni yopish
   // -------------------------------------------------------------------------
 
-  const endSession = useCallback(
-    (at: number): void => {
-      if (closedRef.current) return
-      closedRef.current = true
-      epochRef.current += 1
-      audioManager.stopAll()
+  /** Seansni muzlatadi: audio to'xtaydi, bosishlar endi holatga tegmaydi. */
+  const freeze = useCallback((): void => {
+    closedRef.current = true
+    epochRef.current += 1
+    audioManager.stopAll()
+  }, [])
+
+  /**
+   * ⭐ SOF YOZUV: statistikani omborga yozadi va yangi seans `id` sini qaytaradi.
+   * Yozadigan narsa bo'lmasa `null`.
+   *
+   * NAVIGATSIYA QILMAYDI — aynan shuning uchun ajratilgan. Bu funksiya
+   * komponent uzilganda ("Mashqni to'xtatish", brauzerda orqaga, marshrut
+   * almashishi) va `pagehide` da ham chaqiriladi; navigatsiya u yerda bo'lsa
+   * Bosh sahifaga chiqmoqchi bo'lgan foydalanuvchi natijalar ekraniga
+   * uloqtirilardi.
+   *
+   * `closedRef` FAQAT rostdan yozilganda qo'yiladi. Bo'sh seansda ham qo'yilsa,
+   * React StrictMode ning dev rejimidagi SOXTA unmount'i (u hech qanday yozuv
+   * bo'lmagan paytda yuz beradi) seansni tug'ilishidayoq o'ldirardi: keyingi
+   * har bir bosish `closedRef` da to'xtab qolardi.
+   */
+  const recordAndClose = useCallback(
+    (at: number): string | null => {
+      if (closedRef.current) return null
 
       const records = recordsRef.current
       if (!hasWrittenSentence(records)) {
@@ -306,9 +364,9 @@ export function useTypingSession(lesson: Lesson): TypingSession {
         // tashlangan gap ham `recordsRef` ga tushadi, lekin yig'indiga kirmaydi
         // (PLAN §6a) — ya'ni hammasi tashlangan seans omborga `activeMs: 0`,
         // `netWpm: 0`, `accuracy: 0` bo'lib yozilardi.
-        navigate('/', { replace: true })
-        return
+        return null
       }
+      freeze()
 
       let activeMs = 0
       let keystrokes = 0
@@ -344,11 +402,46 @@ export function useTypingSession(lesson: Lesson): TypingSession {
       for (const [word, stat] of wordStatsRef.current) wordDelta[word] = stat
 
       recordSession(session, wordDelta)
+      return id
+    },
+    [freeze, lesson.id, lesson.title],
+  )
+
+  /** Seansni yozadi VA natijaga qarab marshrutni almashtiradi (normal tugash yo'li). */
+  const endSession = useCallback(
+    (at: number): void => {
+      if (closedRef.current) return
+      const id = recordAndClose(at)
+      if (id === null) {
+        // Yozilmadi — demak `recordAndClose` seansni yopmadi ham. Bu yerda
+        // qo'lda yopamiz: navigatsiya davomida kelgan bosishlar o'lik seansga
+        // tegmasligi kerak.
+        freeze()
+        navigate('/', { replace: true })
+        return
+      }
       // `replace`: tugagan seansga "orqaga" tugmasi bilan qaytib bo'lmaydi.
       navigate(`/results/${id}`, { replace: true })
     },
-    [lesson.id, lesson.title, navigate],
+    [freeze, navigate, recordAndClose],
   )
+
+  /**
+   * "Gap tashlandi" xabarini yoqadi va `SKIP_NOTICE_MS` dan keyin o'chiradi.
+   *
+   * Ketma-ket `Escape` bosilsa taymer QAYTA boshlanadi — xabar oxirgi tashlashdan
+   * keyin to'liq turadi. Bekor qilish (undo) ATAYIN yo'q: xabarning o'zi yetarli,
+   * qaytarish esa yozuv/statistika/progress uchligini ortga sug'urishni talab
+   * qilardi.
+   */
+  const announceSkip = useCallback((): void => {
+    if (skipTimerRef.current !== null) clearTimeout(skipTimerRef.current)
+    setSkipNotice(true)
+    skipTimerRef.current = setTimeout(() => {
+      skipTimerRef.current = null
+      setSkipNotice(false)
+    }, SKIP_NOTICE_MS)
+  }, [])
 
   /**
    * Joriy gapni yopadi va keyingisiga o'tadi.
@@ -405,7 +498,12 @@ export function useTypingSession(lesson: Lesson): TypingSession {
       // Progress GAP DARAJASIDA saqlanadi (PLAN §7): yarim yozilgan gap tashlanadi,
       // chunki kursorni gap o'rtasidan tiklab bo'lmaydi — o'tib ketilgan so'z
       // boshi endi hech qachon ovoz bermaydi.
-      setProgress(lesson.id, nextIndex)
+      //
+      // Tashlangan gap shu yerda ro'yxatga tushadi (yozib tugatilgani esa
+      // ro'yxatdan chiqadi), progress esa ikkala holatda ham oldinga suriladi:
+      // dars oxirida tashlangan gaplar `nextSentenceIndex` orqali qaytadi.
+      completeSentence(lesson.id, index, skipped)
+      if (skipped) announceSkip()
 
       const elapsed = startedAtRef.current === null ? 0 : at - startedAtRef.current
       const nextSentence = lesson.sentences[nextIndex]
@@ -420,7 +518,7 @@ export function useTypingSession(lesson: Lesson): TypingSession {
       resetTyping(nextSentence)
       prefetchFrom(nextIndex)
     },
-    [endSession, lesson.id, lesson.sentences, prefetchFrom, resetTyping],
+    [announceSkip, endSession, lesson.id, lesson.sentences, prefetchFrom, resetTyping],
   )
 
   /** `Tab` — gapni qayta boshlash: `playedWords` bo'shaydi, ovozlar tiklanadi (PLAN §4). */
@@ -431,6 +529,37 @@ export function useTypingSession(lesson: Lesson): TypingSession {
     restartsRef.current += 1
     resetTyping(sentence)
   }, [lesson.sentences, resetTyping])
+
+  /**
+   * ⭐ `Ctrl+Space` — kursor turgan so'zni QAYTA o'qitadi.
+   *
+   * Reducer'dan ATAYIN o'tmaydi: `playedWords`, `pendingWords`, `keystrokes`,
+   * `errorCounts` va `wordStats` ga tegilmaydi. Qayta eshitish — quloq uchun,
+   * statistika uchun emas. Usiz bitta so'zni qayta eshitishning yagona yo'li
+   * `Tab` bilan butun gapni noldan boshlash edi.
+   *
+   * Epoch YOZILMASLIGI ham ataylab: bu ijro `audioEpochRef` ga YANGI yozuv
+   * QO'YMAYDI. Aniqlik uchun: bu "callback'lar hech qachon o'tmaydi" degani
+   * emas — tabiiy zanjir shu `tokenIndex` uchun yozuv qo'yib ulgurgan va ijro
+   * hali boshlanmagan tor oynada replay'ning `onStarted`/`onFailed` i o'sha
+   * yozuvni iste'mol qilishi mumkin. Zarari yo'q: dispatch qilinadigan hodisa
+   * tabiiy zanjirnikidan farq qilmaydi (ayni so'z, ayni manager). Muhimi —
+   * replay O'ZI yangi yozuv qo'ymagani uchun statistikaga yangi yo'l ochilmaydi.
+   *
+   * Yopilgan seansda umuman ishlamaydi (`closedRef`). Ovoz o'chirilganda ham
+   * ishlamaydi: `Practice.tsx` dagi "So'zni qaytarish" tugmasi bunday holatda
+   * `disabled` bo'ladi, klaviatura yorlig'i esa usiz baribir ishlab, ikki kirish
+   * yo'li bir xil narsani boshqacha qilardi.
+   */
+  const replayWord = useCallback((): void => {
+    if (closedRef.current || !audioEnabledRef.current) return
+    unlockOnce()
+    const snapshot = stateRef.current
+    const tokenIndex = wordTokenAt(snapshot.tokens, snapshot.cursor)
+    const token = tokenIndex === -1 ? undefined : snapshot.tokens[tokenIndex]
+    if (token === undefined) return
+    audioManager.playWord(token.text, tokenIndex)
+  }, [unlockOnce])
 
   // -------------------------------------------------------------------------
   // Klaviatura
@@ -476,11 +605,16 @@ export function useTypingSession(lesson: Lesson): TypingSession {
         case 'skip':
           finishSentence(true)
           break
+        case 'replay':
+          // Xato ko'rsatkichi TEGILMAYDI: qayta eshitish kursorni siljitmaydi,
+          // ya'ni foydalanuvchi hali ham o'sha bloklangan belgida turibdi.
+          replayWord()
+          break
         case 'ignore':
           break
       }
     },
-    [applyEvent, finishSentence, restartSentence, unlockOnce],
+    [applyEvent, finishSentence, replayWord, restartSentence, unlockOnce],
   )
 
   /**
@@ -504,6 +638,73 @@ export function useTypingSession(lesson: Lesson): TypingSession {
       window.removeEventListener('pointerdown', onPointerDown)
     }
   }, [unlockOnce])
+
+  // -------------------------------------------------------------------------
+  // ⭐ Seansdan CHIQIB KETISH ham tugatish hisoblanadi
+  // -------------------------------------------------------------------------
+
+  /**
+   * Ilgari statistika faqat ikki yo'l bilan yozilardi: gaplar tugagan yoki
+   * taymer tugagan. Ya'ni 15 ta gap yozib "Mashqni to'xtatish" bosgan
+   * foydalanuvchining `SessionRecord` i, so'z statistikasi va seriyasi JIMGINA
+   * yo'qolardi.
+   *
+   * Bu yerda ATAYIN `recordAndClose` chaqiriladi, `endSession` emas: navigatsiya
+   * bo'lsa Bosh sahifaga chiqmoqchi bo'lgan foydalanuvchi natijalar ekraniga
+   * uloqtirilardi.
+   *
+   * Tinglovchi `beforeunload` EMAS, `pagehide`: mobil Safari sahifani ko'pincha
+   * `beforeunload` siz yopadi, `pagehide` esa "orqaga/oldinga keshi" da ham
+   * ishlaydi va bekor qilish dialogini talab qilmaydi.
+   *
+   * `recordAndClose` ref orqali chaqiriladi — effekt bir marta ulanadi va har
+   * renderda `pagehide` tinglovchisi qayta bog'lanmaydi.
+   */
+  const recordAndCloseRef = useRef(recordAndClose)
+  const navigateRef = useRef(navigate)
+  useEffect(() => {
+    recordAndCloseRef.current = recordAndClose
+    navigateRef.current = navigate
+  })
+
+  useEffect(() => {
+    const onPageHide = (): void => {
+      recordAndCloseRef.current(Date.now())
+    }
+
+    /**
+     * "Orqaga/oldinga keshi" (bfcache) dan qaytish.
+     *
+     * `pagehide` seansni yozib YOPADI (`closedRef`), lekin sahifani o'ldirmaydi:
+     * foydalanuvchi tashqi havolaga chiqib "orqaga" bossa, brauzer o'sha DOM ni
+     * xotiradan tiklaydi. Komponent hamon mashq ekranini ko'rsatadi-yu, aslida
+     * o'lik: `onKeyDown` `closedRef` da darhol qaytadi, taymer to'xtagan, ekranda
+     * esa buni bildiruvchi HECH QANDAY belgi yo'q — foydalanuvchi ilova buzilgan
+     * deb o'ylaydi.
+     *
+     * Ma'lumot yo'qolmaydi (seans allaqachon yozilgan), shuning uchun eng to'g'ri
+     * javob — jimgina o'lik ekranda ushlab turmasdan darslar ro'yxatiga chiqarish.
+     * `event.persisted` SHART: u faqat bfcache tiklashida rost bo'ladi, oddiy
+     * yuklashda esa yolg'on, ya'ni tirik seans bexosdan uzilmaydi.
+     */
+    const onPageShow = (event: PageTransitionEvent): void => {
+      if (event.persisted && closedRef.current) {
+        navigateRef.current('/', { replace: true })
+      }
+    }
+
+    window.addEventListener('pagehide', onPageHide)
+    window.addEventListener('pageshow', onPageShow)
+    return () => {
+      window.removeEventListener('pagehide', onPageHide)
+      window.removeEventListener('pageshow', onPageShow)
+      // Normal tugash yo'lida `closedRef` allaqachon qo'yilgan — bu chaqiruv
+      // o'sha yerdayoq qaytadi va seans ikki marta yozilmaydi. StrictMode ning
+      // soxta unmount'i ham xavfsiz: yozuv bo'lmagani uchun hech narsa
+      // yozilmaydi, seans yopilmaydi va navigatsiya ham yo'q.
+      recordAndCloseRef.current(Date.now())
+    }
+  }, [])
 
   // -------------------------------------------------------------------------
   // Audio zanjiri (PLAN §4 dagi eng muhim bog'lanish)
@@ -532,17 +733,26 @@ export function useTypingSession(lesson: Lesson): TypingSession {
     audioManager.setVoice(voice, rate)
   }, [voice, rate])
 
+  // Server holati seans BOSHIDA bir marta emas, `SERVER_POLL_MS` da bir
+  // tekshiriladi: 10 daqiqalik seansning o'rtasida server o'lsa ham (yoki
+  // qaytsa ham) "zaxira: brauzer ovozi" belgisi haqiqatni ko'rsatib tursin.
+  // Ovoz o'chiq bo'lsa umuman so'ralmaydi.
   useEffect(() => {
     audioEnabledRef.current = audioEnabled
     audioManager.setEnabled(audioEnabled)
     writeAudioEnabled(audioEnabled)
     if (!audioEnabled) return
     let alive = true
-    void audioManager.checkServer().then((ok) => {
-      if (alive) setServerOk(ok)
-    })
+    const check = (): void => {
+      void audioManager.checkServer().then((ok) => {
+        if (alive) setServerOk(ok)
+      })
+    }
+    check()
+    const timer = setInterval(check, SERVER_POLL_MS)
     return () => {
       alive = false
+      clearInterval(timer)
     }
   }, [audioEnabled])
 
@@ -615,6 +825,14 @@ export function useTypingSession(lesson: Lesson): TypingSession {
     return () => clearInterval(timer)
   }, [endSession])
 
+  // Tashlash xabarining taymeri komponent bilan birga o'chadi — aks holda u
+  // uzilgan komponentda `setState` chaqirardi.
+  useEffect(() => {
+    return () => {
+      if (skipTimerRef.current !== null) clearTimeout(skipTimerRef.current)
+    }
+  }, [])
+
   const toggleAudio = useCallback((): void => {
     setAudioEnabled((prev) => !prev)
   }, [])
@@ -666,8 +884,10 @@ export function useTypingSession(lesson: Lesson): TypingSession {
     remainingMs,
     sentenceProgress: Math.min(1, progress.done / sessionTotal),
     timeProgress: Math.min(1, elapsedMs / SESSION_MAX_MS),
+    skipNotice,
     audioEnabled,
     toggleAudio,
+    replayWord,
     serverOk,
   }
 }

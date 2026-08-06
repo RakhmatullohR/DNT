@@ -19,6 +19,7 @@ import { normalize } from '../core/normalize.ts'
 import type { NormalizeResult } from '../core/normalize.ts'
 import { splitSentences } from '../core/splitSentences.ts'
 import { tokenize } from '../core/tokenize.ts'
+import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
 import { listLessons, newLessonId, saveLesson } from '../store/lessons.ts'
 import type { Lesson } from '../store/lessons.ts'
 
@@ -30,6 +31,11 @@ const FIELD = [
   'transition-colors duration-150 ease-out hover:border-white/[0.12]',
   'focus:border-[#5ee6c1] focus:outline-none',
   'focus-visible:ring-2 focus-visible:ring-[#5ee6c1]',
+  // Button/Layout dagi kabi halqa bilan chegara orasida bo'shliq: aks holda
+  // halqa chegaraga yopishib, ikkovi bitta qalin chiziqqa aylanadi (izchillik
+  // auditi). Offset rangi shu FIELD chizilgan panelning foni — Import dagi
+  // barcha FIELD "#0e141c" panel ustida turadi (Home dagi sub-panel emas).
+  'focus-visible:ring-offset-2 focus-visible:ring-offset-[#0e141c]',
 ].join(' ')
 
 /** PLAN §2c: paste hajmi shu songa cheklanadi. */
@@ -102,6 +108,17 @@ function rateLabel(rate: number): string {
   return `${rate}% — sekinroq`
 }
 
+/**
+ * Har bir gap qatoridagi "Bo'lish/Yopish" tugmasining barqaror `id`si.
+ * Tahrirlash panelini "Saqlash"/"Bekor qilish" bilan yopgandan keyin fokus
+ * shu tugmaga qaytariladi — `applyEdit` gaplar ro'yxatini o'zgartirgani uchun
+ * qator `<li>` QAYTA ULANADI, shuning uchun fokusni React ref emas, `index`dan
+ * hosil bo'lgan barqaror `id` orqali topish kerak.
+ */
+function editToggleId(index: number): string {
+  return `gap-${index}-bolish`
+}
+
 /** Gapdagi sintez qilinadigan so'zlar; raqam va tinish belgisi `gap` bo'lgani uchun tushib qoladi. */
 function sentenceWords(sentence: string): string[] {
   const words: string[] = []
@@ -160,6 +177,8 @@ type SentenceRow = { index: number; text: string; words: number }
 // ---------------------------------------------------------------------------
 
 export function Import() {
+  useDocumentTitle('Yangi dars')
+
   const navigate = useNavigate()
 
   const [raw, setRaw] = useState('')
@@ -169,6 +188,15 @@ export function Import() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null)
   const [editing, setEditing] = useState<{ index: number; draft: string } | null>(null)
   const [onlyLong, setOnlyLong] = useState(false)
+
+  /**
+   * Tahrirlash panelini "Saqlash"/"Bekor qilish" bilan yopgandan keyin fokus
+   * qaytariladigan tugma `id`si. Panel yopilishi bilan fokuslangan tugma DOM dan
+   * chiqib ketadi (Saqlashda esa `<li>` `key`si o'zgargani uchun butunlay qayta
+   * ulanadi), shuning uchun fokus shu render commitidan KEYIN — effektda —
+   * qo'yiladi, aks holda yangi DOM tayyor bo'lmasdan `getElementById` bo'sh qaytardi.
+   */
+  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null)
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
 
   /**
@@ -213,6 +241,14 @@ export function Import() {
       window.clearTimeout(timer)
     }
   }, [raw])
+
+  // Fokusni tahrirlash panelini yopgan tugmaga qaytaradi — render commit
+  // qilingandan (yangi DOM tayyor bo'lgandan) keyin, shu sababli effektda.
+  useEffect(() => {
+    if (pendingFocusId === null) return
+    document.getElementById(pendingFocusId)?.focus()
+    setPendingFocusId(null)
+  }, [pendingFocusId])
 
   const sentences = analysis?.sentences ?? []
 
@@ -265,6 +301,10 @@ export function Import() {
       return { ...current, sentences: next }
     })
     setEditing(null)
+    // Tahrirlangan gap o'rniga tushgan birinchi bo'lak ham `index` pozitsiyasida
+    // qoladi (`splice` faqat SHU o'rindan boshlab qo'shadi) — shuning uchun
+    // fokus xuddi shu `id`ga qaytariladi, `<li>` qayta ulangan bo'lsa ham.
+    setPendingFocusId(editToggleId(index))
   }
 
   async function handleImport(): Promise<void> {
@@ -362,9 +402,14 @@ export function Import() {
         <label htmlFor="dars-nomi" className={LABEL}>
           dars nomi
         </label>
+        {/* `lang="en"`: qiymat odatda inglizcha — `suggestTitle` uni AYNAN
+            joylashtirilgan inglizcha matndan oladi. Kelishuv ochiq aytilsin:
+            `placeholder` o'zbekcha, lekin u faqat maydon BO'SH bo'lganda
+            o'qiladi, qiymat esa butun mashq davomida qoladi. */}
         <input
           id="dars-nomi"
           type="text"
+          lang="en"
           value={title}
           onChange={(event) => setTitle(event.target.value)}
           placeholder={suggestedTitle === '' ? 'Masalan: Orwell — 1984, 1-bob' : suggestedTitle}
@@ -388,8 +433,13 @@ export function Import() {
             {wordCount} / {MAX_WORDS} so&apos;z
           </span>
         </div>
+        {/* `lang="en"`: bu ilovaning butun mazmuni — foydalanuvchi shu yerga
+            INGLIZCHA matn joylashtiradi. `index.html` `lang="uz"` bo'lgani uchun
+            belgilanmasa minglab so'z o'zbek fonetikasida o'qilardi. Gap
+            ro'yxati (`:566`) va bo'lish muharriri (`:603`) allaqachon shunday. */}
         <textarea
           id="dars-matni"
+          lang="en"
           value={raw}
           onChange={(event) => setRaw(event.target.value)}
           spellCheck={false}
@@ -522,7 +572,10 @@ export function Import() {
                       <span className="w-7 shrink-0 pt-0.5 text-right font-mono text-[11px] text-[#7d8b9c] tabular-nums">
                         {row.index + 1}
                       </span>
-                      <p className="min-w-0 flex-1 font-mono text-[13px] leading-relaxed text-[#c6d3de]">
+                      <p
+                        lang="en"
+                        className="min-w-0 flex-1 font-mono text-[13px] leading-relaxed text-[#c6d3de]"
+                      >
                         {row.text}
                       </p>
                       <span
@@ -533,6 +586,7 @@ export function Import() {
                         {row.words}
                       </span>
                       <Button
+                        id={editToggleId(row.index)}
                         size="sm"
                         variant="ghost"
                         onClick={() => {
@@ -545,7 +599,10 @@ export function Import() {
 
                     {isEditing && editing !== null ? (
                       <div className="mt-3 border-t border-white/[0.06] pt-3">
-                        <p className="font-mono text-[11px] leading-relaxed text-[#7d8b9c]">
+                        <p
+                          id={`gap-${row.index}-tahrir-yordam`}
+                          className="font-mono text-[11px] leading-relaxed text-[#7d8b9c]"
+                        >
                           Har bir qator — alohida gap. Bo&apos;sh qatorlar tashlanadi; hammasi
                           o&apos;chirilsa gap ro&apos;yxatdan chiqariladi.
                         </p>
@@ -553,6 +610,9 @@ export function Import() {
                           value={editing.draft}
                           autoFocus
                           spellCheck={false}
+                          lang="en"
+                          aria-label={`${row.index + 1}-gapni qatorlarga bo'lish`}
+                          aria-describedby={`gap-${row.index}-tahrir-yordam`}
                           onChange={(event) => {
                             const draft = event.target.value
                             setEditing((current) =>
@@ -570,7 +630,17 @@ export function Import() {
                           >
                             Saqlash
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              // Panel yopilishi bilan shu tugma ham DOM dan chiqadi —
+                              // "Yopish"dan farqli o'laroq bu yerda tugma qayta
+                              // ulanmaydi, shuning uchun fokus "Bo'lish"ga qaytariladi.
+                              setPendingFocusId(editToggleId(row.index))
+                              setEditing(null)
+                            }}
+                          >
                             Bekor qilish
                           </Button>
                         </div>

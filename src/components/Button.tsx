@@ -22,8 +22,8 @@ const BASE = [
   'font-mono font-medium whitespace-nowrap select-none',
   'border transition-colors duration-150 ease-out',
   'active:translate-y-px',
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5ee6c1]',
-  'focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f14]',
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+  'focus-visible:ring-offset-2 focus-visible:ring-offset-base',
   // O'chirilgan holat ATAYIN shaffoflik bilan emas, aniq ranglar bilan beriladi:
   // `opacity` butun elementga tushib matnni 3:1 dan pastga tortardi (danger
   // variantida 2.13:1 gacha). Uch variant ham BIR XIL o'chirilgan ko'rinishga
@@ -35,7 +35,7 @@ const BASE = [
 const VARIANTS: Record<ButtonVariant, string> = {
   // Asosiy harakat — yagona to'ldirilgan yuza. Sahifada bittadan ortiq bo'lmasligi kerak.
   primary: [
-    'border-transparent bg-[#5ee6c1] text-[#04231c]',
+    'border-transparent bg-accent text-[#04231c]',
     'hover:bg-[#7cf0d3] disabled:hover:bg-transparent',
   ].join(' '),
   // Ikkilamchi harakat — faqat ingichka chegara, fon deyarli sezilmaydi.
@@ -46,7 +46,7 @@ const VARIANTS: Record<ButtonVariant, string> = {
   ].join(' '),
   // Buzuvchi harakat — qizil faqat chegarada, to'ldirilgan qizil tugma juda baland ovozli.
   danger: [
-    'border-[#452027] bg-transparent text-[#ff7b7b]',
+    'border-[#452027] bg-transparent text-danger',
     'hover:border-[#ff7b7b] hover:bg-[#1e1215]',
     'disabled:hover:border-[#22303d] disabled:hover:bg-transparent',
   ].join(' '),

@@ -19,6 +19,12 @@ export type BarChartProps = {
   data: BarChartDatum[]
   /** Shkalaning yuqori chegarasi. Berilmasa — ma'lumotdagi eng katta qiymat. */
   max?: number
+  /**
+   * Ekran o'quvchi uchun grafik nomi (`Sparkline.tsx` dagi naqsh bilan bir xil).
+   * Bir sahifada bir nechta `BarChart` bo'lsa, shu bo'lmasa hammasi bir xil
+   * umumiy matn bilan eshitiladi — qaysi biri nima ekanini bilib bo'lmaydi.
+   */
+  label?: string
 }
 
 const BAR = '#5ee6c1'
@@ -34,7 +40,7 @@ function roundTo2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
-export function BarChart({ data, max }: BarChartProps) {
+export function BarChart({ data, max, label }: BarChartProps) {
   const [drawn, setDrawn] = useState(false)
   const [motionMs, setMotionMs] = useState(650)
 
@@ -81,10 +87,15 @@ export function BarChart({ data, max }: BarChartProps) {
     ? [rows[0]?.label ?? '', rows[Math.floor((n - 1) / 2)]?.label ?? '', rows[n - 1]?.label ?? '']
     : []
 
+  const hasLabel = label !== undefined && label !== ''
   const summary =
     n === 0
-      ? "Ustunli grafik: ma'lumot yo'q"
-      : `Ustunli grafik: ${n} ta ustun, eng yuqori qiymat ${Math.round(peak)}`
+      ? hasLabel
+        ? `${label}: ma'lumot yo'q`
+        : "Ustunli grafik: ma'lumot yo'q"
+      : hasLabel
+        ? `${label}: ${n} ta ustun, eng yuqori qiymat ${Math.round(peak)}`
+        : `Ustunli grafik: ${n} ta ustun, eng yuqori qiymat ${Math.round(peak)}`
 
   return (
     <div className="w-full">

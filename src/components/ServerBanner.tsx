@@ -88,7 +88,9 @@ export function ServerBanner() {
       aria-live="polite"
       className={[
         'border-b border-[#3a2c12] bg-[#151007]',
-        'transition-all duration-300 ease-out',
+        // `motion-reduce:transition-none` — pastdagi nuqta bilan bir xil sabab:
+        // harakatni kamaytirish so'ralganda kirish o'tishi ham to'xtashi kerak.
+        'transition-all duration-300 ease-out motion-reduce:transition-none',
         shown ? 'translate-y-0 opacity-100' : '-translate-y-1 opacity-0',
       ].join(' ')}
     >

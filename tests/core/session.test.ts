@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   clampIndex,
   hasWrittenSentence,
+  nextSentenceIndex,
   SESSION_MAX_MS,
   SESSION_MAX_SENTENCES,
   sessionShouldEnd,
@@ -89,6 +90,52 @@ describe('boshlanish indeksi', () => {
     // Yaxlitlangandan KEYIN ham "tugadi" belgisi belgiligicha qoladi.
     expect(clampIndex(9.9, 10)).toBe(9)
     expect(clampIndex(10.9, 10)).toBe(0)
+  })
+})
+
+describe('tashlangan gaplar dars oxirida qaytadi', () => {
+  it("dars TUGAMAGAN bo'lsa tashlangan gaplar navbatni buzmaydi", () => {
+    // Eng muhim tekshiruv: "tashlangan gapga darhol qaytish" mantiq TESKARI
+    // tuzoq yasardi — seans doim o'sha ataylab tashlangan gapga qaytaverardi va
+    // undan chiqishning yagona yo'li uni yozib tugatish bo'lardi.
+    expect(nextSentenceIndex(5, 10, [2])).toBe(5)
+    expect(nextSentenceIndex(0, 10, [0, 3])).toBe(0)
+    expect(nextSentenceIndex(9, 10, [1, 4])).toBe(9)
+  })
+
+  it('dars TUGAGANDA eng kichik tashlangan gapdan boshlanadi', () => {
+    expect(nextSentenceIndex(10, 10, [7, 2, 5])).toBe(2)
+    expect(nextSentenceIndex(10, 10, [9])).toBe(9)
+    expect(nextSentenceIndex(3, 3, [0])).toBe(0)
+  })
+
+  it("tashlangan gap qolmasa tugagan dars boshidan boshlanadi", () => {
+    // `clampIndex` bilan bir xil xulq: bu yerda hech narsa o'zgarmaydi.
+    expect(nextSentenceIndex(10, 10, [])).toBe(0)
+    expect(nextSentenceIndex(10, 10)).toBe(0)
+  })
+
+  it('chegaradan chiqqan tashlangan indekslar e\'tiborsiz qoladi', () => {
+    // Ro'yxat `localStorage` dan keladi — ishonchsiz.
+    expect(nextSentenceIndex(10, 10, [10, 42])).toBe(0)
+    expect(nextSentenceIndex(10, 10, [-1, 4])).toBe(4)
+    expect(nextSentenceIndex(10, 10, [Number.NaN, Number.POSITIVE_INFINITY, 6])).toBe(6)
+    expect(nextSentenceIndex(10, 10, [3.9])).toBe(3)
+  })
+
+  it("progressdan KATTA (ombor kesib ulgurmagan) qiymat ham tugadi deb qaraladi", () => {
+    expect(nextSentenceIndex(99, 10, [4])).toBe(4)
+  })
+
+  it("buzuq progress oddiy yo'lga tushadi, tashlanganlar ochilmaydi", () => {
+    expect(nextSentenceIndex(Number.NaN, 10, [4])).toBe(0)
+    expect(nextSentenceIndex(Number.POSITIVE_INFINITY, 10, [4])).toBe(0)
+    expect(nextSentenceIndex(-5, 10, [4])).toBe(0)
+  })
+
+  it("gapsiz darsda doim 0", () => {
+    expect(nextSentenceIndex(0, 0, [0])).toBe(0)
+    expect(nextSentenceIndex(3, 0, [1])).toBe(0)
   })
 })
 

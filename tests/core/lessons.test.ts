@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  completeSentence,
   corruptLessonsBackup,
   deleteLesson,
   discardCorruptLessonsBackup,
@@ -103,6 +104,9 @@ function makeLesson(over: Partial<Lesson> = {}): Lesson {
     normalizedText: 'The cat sat. The dog ran.',
     sentences: ['The cat sat.', 'The dog ran.'],
     progress: 0,
+    // Ombor `skipped` ni O'QISHDA doim massivga normallashtiradi, ya'ni qaytgan
+    // dars uni har doim ushlab turadi — namuna ham shu shaklda bo'lishi kerak.
+    skipped: [],
     voice: 'en-US-AriaNeural',
     rate: 0,
     ...over,
@@ -262,6 +266,140 @@ describe('setProgress', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Tashlangan gaplar (PLAN §7): progress bilan BIRGA yoziladi
+// ---------------------------------------------------------------------------
+
+describe('completeSentence', () => {
+  /** Uch gapli dars — chegaralarni ko'rsatish uchun ikkitasi yetmaydi. */
+  function three(over: Partial<Lesson> = {}): Lesson {
+    return makeLesson({ sentences: ['Bir.', 'Ikki.', 'Uch.'], ...over })
+  }
+
+  it('yozib tugatilgan gap progressni oldinga suradi', () => {
+    saveLesson(three())
+    completeSentence('l-1', 0, false)
+
+    expect(getLesson('l-1')?.progress).toBe(1)
+    expect(getLesson('l-1')?.skipped).toEqual([])
+  })
+
+  it("tashlangan gap ro'yxatga tushadi, progress esa BARIBIR suriladi", () => {
+    // Aynan shu nuqta: progress to'xtatilsa keyingi seans o'sha gapga
+    // qaytaverardi va foydalanuvchi undan chiqa olmasdi.
+    saveLesson(three())
+    completeSentence('l-1', 1, true)
+
+    expect(getLesson('l-1')?.progress).toBe(2)
+    expect(getLesson('l-1')?.skipped).toEqual([1])
+  })
+
+  it("bitta gap ikki marta tashlansa ro'yxatda bir marta qoladi", () => {
+    saveLesson(three())
+    completeSentence('l-1', 1, true)
+    completeSentence('l-1', 1, true)
+
+    expect(getLesson('l-1')?.skipped).toEqual([1])
+  })
+
+  it("keyin YOZIB tugatilgan gap ro'yxatdan chiqadi", () => {
+    saveLesson(three({ progress: 3, skipped: [0, 2] }))
+    completeSentence('l-1', 0, false)
+
+    expect(getLesson('l-1')?.skipped).toEqual([2])
+  })
+
+  it("ro'yxat o'sish tartibida saqlanadi", () => {
+    saveLesson(three())
+    completeSentence('l-1', 2, true)
+    completeSentence('l-1', 0, true)
+
+    expect(getLesson('l-1')?.skipped).toEqual([0, 2])
+  })
+
+  it('⭐ progress ORQAGA surilmaydi', () => {
+    // Dars oxirida qaytgan tashlangan gap yozib tugatilganda `index + 1`
+    // saqlangan qiymatdan kichik bo'ladi. Oddiy yozuv foydalanuvchini
+    // allaqachon yozib bo'lgan gaplariga qaytarib tashlardi.
+    saveLesson(three({ progress: 3, skipped: [0] }))
+    completeSentence('l-1', 0, false)
+
+    expect(getLesson('l-1')?.progress).toBe(3)
+    expect(getLesson('l-1')?.skipped).toEqual([])
+  })
+
+  it("oxirgi gap progressni \"dars tugadi\" belgisiga olib chiqadi", () => {
+    saveLesson(three())
+    completeSentence('l-1', 2, false)
+
+    expect(getLesson('l-1')?.progress).toBe(3)
+  })
+
+  it('chegaradan tashqaridagi indeks — xavfsiz no-op', () => {
+    saveLesson(three({ progress: 1 }))
+    const before = localStorage.getItem(LESSONS_KEY)
+
+    completeSentence('l-1', 3, true)
+    completeSentence('l-1', -1, true)
+    completeSentence('l-1', Number.NaN, true)
+
+    expect(localStorage.getItem(LESSONS_KEY)).toBe(before)
+  })
+
+  it("mavjud bo'lmagan dars — xavfsiz no-op", () => {
+    saveLesson(three())
+    const before = localStorage.getItem(LESSONS_KEY)
+
+    completeSentence('yoq-bunday-dars', 0, true)
+
+    expect(localStorage.getItem(LESSONS_KEY)).toBe(before)
+    expect(listLessons()).toHaveLength(1)
+  })
+
+  it('faqat nishondagi darsni tegadi', () => {
+    saveLesson(three({ id: 'a' }))
+    saveLesson(three({ id: 'b' }))
+
+    completeSentence('a', 0, true)
+
+    expect(getLesson('a')?.skipped).toEqual([0])
+    expect(getLesson('b')?.skipped).toEqual([])
+    expect(getLesson('b')?.progress).toBe(0)
+  })
+})
+
+describe("saqlangan `skipped` ro'yxatini o'qish", () => {
+  it("maydoni yo'q ESKI dars bo'sh ro'yxat bilan qaytadi", () => {
+    writeRaw([{ id: 'eski', sentences: ['Bir.', 'Ikki.'], normalizedText: 'Bir. Ikki.' }])
+    expect(getLesson('eski')?.skipped).toEqual([])
+  })
+
+  it('buzuq qiymatlar tozalanadi, dars esa YO\'QOLMAYDI', () => {
+    // Ro'yxat qulaylik uchun; dars matni undan muhimroq, shuning uchun buzuq
+    // `skipped` butun yozuvni tashlab yubormaydi.
+    writeRaw([makeLesson({ skipped: [1, -1, 5, 0.5, Number.NaN] })])
+
+    const lesson = getLesson('l-1')
+    expect(lesson).not.toBeNull()
+    expect(lesson?.skipped).toEqual([0, 1])
+  })
+
+  it("massiv bo'lmagan qiymat bo'sh ro'yxatga aylanadi", () => {
+    writeRaw([{ ...makeLesson(), skipped: 'ha' }])
+    expect(getLesson('l-1')?.skipped).toEqual([])
+  })
+
+  it('takrorlangan indekslar bir marta qoladi va tartiblanadi', () => {
+    writeRaw([makeLesson({ skipped: [1, 0, 1] })])
+    expect(getLesson('l-1')?.skipped).toEqual([0, 1])
+  })
+
+  it("`saveLesson` ham normallashtiradi", () => {
+    saveLesson(makeLesson({ skipped: [9, 1, 1] }))
+    expect(getLesson('l-1')?.skipped).toEqual([1])
+  })
+})
+
+// ---------------------------------------------------------------------------
 // O'chirish
 // ---------------------------------------------------------------------------
 
@@ -372,6 +510,10 @@ describe("buzuq yozuvlar", () => {
       normalizedText: 'Bir. Ikki.',
       sentences: ['Bir.', 'Ikki.'],
       progress: 0,
+      // `skipped` maydoni keyin qo'shilgan: eski darsda u umuman yo'q, lekin
+      // o'qishda bo'sh massivga aylanadi — chaqiruvchi kod `undefined` ni
+      // hisobga olishi shart emas.
+      skipped: [],
       voice: '',
       rate: 0,
     })

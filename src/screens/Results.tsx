@@ -13,8 +13,9 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { tokenize } from '../core/tokenize.ts'
+import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
 import { getLesson } from '../store/lessons.ts'
-import { getSession, hardestWords } from '../store/stats.ts'
+import { getSession, hardestWords, loadStats, streakDays } from '../store/stats.ts'
 import type { SessionRecord } from '../store/stats.ts'
 import { Sparkline } from '../components/Sparkline.tsx'
 
@@ -62,6 +63,14 @@ function formatWpm(value: number): string {
 function formatPercent(ratio: number): string {
   const safe = Number.isFinite(ratio) && ratio > 0 ? Math.min(1, ratio) : 0
   return `${(safe * 100).toFixed(1)}%`
+}
+
+/** Oldingi seansga nisbatan wpm farqi — "o'zgarishsiz" | "+3 wpm" | "-2 wpm". */
+function formatWpmDelta(delta: number): string {
+  if (!Number.isFinite(delta)) return "o'zgarishsiz"
+  const rounded = Math.round(delta)
+  if (rounded === 0) return "o'zgarishsiz"
+  return `${rounded > 0 ? '+' : ''}${rounded} wpm`
 }
 
 // ---------------------------------------------------------------------------
@@ -158,7 +167,7 @@ function NotFound({ sessionId }: { sessionId: string }) {
               Statistika
             </Link>
             <Link to="/" className={BTN_GHOST}>
-              Bosh sahifa
+              Darslar
             </Link>
           </div>
         </div>
@@ -209,6 +218,21 @@ function sessionWordRows(session: SessionRecord): WordRow[] {
 }
 
 // ---------------------------------------------------------------------------
+// Taqqoslash konteksti — bu seansdan OLDINGI seansni topadi
+// ---------------------------------------------------------------------------
+
+/**
+ * `startedAt` bo'yicha saralangan seanslar ro'yxatida shu seansdan bevosita
+ * oldingisi. Birinchi seans bo'lsa (yoki hozirgisi ro'yxatda topilmasa)
+ * `null` — chaqiruvchi taqqoslash qatorini shunchaki chizmaydi.
+ */
+function previousSession(current: SessionRecord): SessionRecord | null {
+  const ordered = [...loadStats().sessions].sort((a, b) => a.startedAt - b.startedAt)
+  const index = ordered.findIndex((item) => item.id === current.id)
+  return index > 0 ? (ordered[index - 1] ?? null) : null
+}
+
+// ---------------------------------------------------------------------------
 // Ekran
 // ---------------------------------------------------------------------------
 
@@ -219,10 +243,27 @@ export function Results() {
   // `localStorage` dan faqat `sessionId` o'zgarganda o'qiladi. `useState`
   // ishlatilmaydi: react-router bir marshrutning ichida komponentni QAYTA
   // ULAMAYDI, ya'ni boshqa seansga o'tilganda eski yozuv ekranda qolib ketardi.
-  const { session, words } = useMemo(() => {
+  //
+  // `lesson` shu yerda ham o'qiladi (`sessionWordRows` ichida allaqachon
+  // chaqirilgani uchun arzon): "Davom ettirish" darsning o'zi o'chirilganmi
+  // yoki tugaganmi bilishi kerak, buni faqat `session.lessonId` bo'sh emasligi
+  // bilan tekshirib bo'lmaydi.
+  const { session, words, lesson, previous } = useMemo(() => {
     const found: SessionRecord | null = sessionId === '' ? null : getSession(sessionId)
-    return { session: found, words: found === null ? [] : sessionWordRows(found) }
+    return {
+      session: found,
+      words: found === null ? [] : sessionWordRows(found),
+      lesson: found === null ? null : getLesson(found.lessonId),
+      previous: found === null ? null : previousSession(found),
+    }
   }, [sessionId])
+
+  // Sarlavha SESSIYA HOLATIGA qarab tanlanadi, shuning uchun hook har ikki
+  // holatda ham (topilgan/topilmagan) bir xil tartibda chaqiriladi — u pastdagi
+  // erta `return` dan OLDIN turishi shart (React Hooks qoidasi).
+  const lessonTitle =
+    session === null ? '' : session.lessonTitle === '' ? 'Nomsiz dars' : session.lessonTitle
+  useDocumentTitle(session === null ? 'Topilmadi' : `${lessonTitle} — seans yakuni`)
 
   if (session === null) return <NotFound sessionId={sessionId} />
 
@@ -230,8 +271,38 @@ export function Results() {
   const skippedCount = session.sentences.length - written.length
   const restarts = written.reduce((sum, record) => sum + record.restarts, 0)
   const wpmSeries = written.map((record) => record.netWpm)
-  const lessonTitle = session.lessonTitle === '' ? 'Nomsiz dars' : session.lessonTitle
-  const canContinue = session.lessonId !== ''
+
+  // To'rtta holat: dars o'chirilgan (`lesson === null`) bo'lsa mashq havolasi
+  // umuman ko'rsatilmaydi — u berk ko'chaga olib borardi. Qolgan uchtasi
+  // `Home.tsx` dagi karta bilan BIR XIL qoidaga bo'ysunadi, chunki ikkovi ham
+  // AYNAN bitta manzilga (`/practice/:id`) boradi va u yerda seans qaysi gapdan
+  // boshlanishini `session.ts` dagi `nextSentenceIndex` hal qiladi:
+  //   - tugagan, tashlangani yo'q  -> 0-gap        -> "Darsni qaytadan boshlash"
+  //   - tugagan, tashlangani bor   -> eng kichik   -> "Tashlanganlarni yozish"
+  //   - tugamagan                  -> keyingi gap  -> "Davom ettirish"
+  // Yorliq shu uchtasidan chetga chiqsa foydalanuvchini aldaydi: ilgari bu yerda
+  // "Darsni qaytadan boshlash" deb yozilgan-u, `nextSentenceIndex` uni tashlangan
+  // gapga olib borardi.
+  const lessonTotal = lesson === null ? 0 : lesson.sentences.length
+  const lessonDone = lesson === null ? 0 : Math.min(Math.max(0, lesson.progress), lessonTotal)
+  const lessonFinished = lessonTotal > 0 && lessonDone >= lessonTotal
+  // Yaroqsiz indekslar `nextSentenceIndex` dagi bilan bir xil qoida bo'yicha
+  // chiqarib tashlanadi — ro'yxat `localStorage` dan keladi va ishonchsiz.
+  const pendingSkipped =
+    lesson === null
+      ? 0
+      : (lesson.skipped ?? []).filter(
+          (raw) =>
+            Number.isFinite(raw) && Math.floor(raw) >= 0 && Math.floor(raw) < lessonTotal,
+        ).length
+  const allDone = lessonFinished && pendingSkipped === 0
+  const practiceLabel = allDone
+    ? 'Darsni qaytadan boshlash'
+    : lessonFinished
+      ? 'Tashlanganlarni yozish'
+      : 'Davom ettirish'
+  const showPracticeLink = lesson !== null
+  const streak = streakDays()
 
   return (
     // Ildiz ATAYLAB oddiy <div>: <main>, markazlash, kenglik chegarasi va yon
@@ -242,7 +313,12 @@ export function Results() {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-0">
             <div className={LABEL}>seans yakuni</div>
-            <h1 className="mt-2 truncate font-mono text-[21px] font-semibold text-[#e6edf3]">
+            {/* `lang` SHARTLI — `Practice.tsx` dagi sarlavha bilan bir xil sabab:
+                nomsiz darsda o'zbekcha zaxira matn chiqadi. */}
+            <h1
+              lang={session.lessonTitle === '' ? undefined : 'en'}
+              className="mt-2 truncate font-mono text-[21px] font-semibold text-[#e6edf3]"
+            >
               {lessonTitle}
             </h1>
             <p className="mt-1.5 font-mono text-[11px] text-[#7d8b9c]">
@@ -253,7 +329,7 @@ export function Results() {
             to="/"
             className="font-mono text-[11px] text-[#7d8b9c] underline decoration-white/20 underline-offset-4 transition-colors hover:text-[#e6edf3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ee6c1]"
           >
-            Bosh sahifa
+            Darslar
           </Link>
         </div>
       </Reveal>
@@ -275,6 +351,20 @@ export function Results() {
               <p className="mt-3 max-w-sm text-[13px] leading-relaxed text-[#7d8b9c]">
                 Faqat to&apos;g&apos;ri yozilgan belgilar hisobga olingan; 5 belgi = 1 so&apos;z.
               </p>
+
+              {/* Taqqoslash konteksti: mutlaq raqamning o'zi "bu yaxshimi?" degan
+                  savolga javob bermaydi. Uch qator yetarli — yangi grafik shart emas. */}
+              <div className="mt-4 space-y-1 font-mono text-[12px] text-[#7d8b9c]">
+                {previous !== null ? (
+                  <p>Oldingi seansdan: {formatWpmDelta(session.netWpm - previous.netWpm)}</p>
+                ) : null}
+                {lesson !== null ? (
+                  <p>
+                    Darsda: {lessonDone} / {lessonTotal} gap
+                  </p>
+                ) : null}
+                <p>Seriya: {streak} kun</p>
+              </div>
             </div>
 
             <dl className="grid grid-cols-2 gap-x-8 gap-y-4 sm:text-right">
@@ -368,7 +458,10 @@ export function Results() {
             <ul className="mt-5 space-y-2.5">
               {words.map((row) => (
                 <li key={row.word} className="flex items-center gap-3 sm:gap-4">
-                  <span className="w-28 shrink-0 truncate font-mono text-[13px] text-[#e6edf3] sm:w-40">
+                  <span
+                    lang="en"
+                    className="w-28 shrink-0 truncate font-mono text-[13px] text-[#e6edf3] sm:w-40"
+                  >
                     {row.word}
                   </span>
                   <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-white/[0.05]">
@@ -398,19 +491,23 @@ export function Results() {
 
       <Reveal delay={280}>
         <div className="mt-6 flex flex-wrap gap-3">
-          {canContinue ? (
+          {/* Manzil uchala holatda ham BITTA — farq faqat yorliqda, shuning uchun
+              ilgarigi ikkita bir xil `to` li `<Link>` bittaga yig'ildi. */}
+          {showPracticeLink ? (
             <Link to={`/practice/${encodeURIComponent(session.lessonId)}`} className={BTN_PRIMARY}>
-              Davom ettirish
+              {practiceLabel}
             </Link>
           ) : null}
           <Link to="/stats" className={BTN_GHOST}>
             Statistika
           </Link>
-          {canContinue ? null : (
+          {/* Dars tugagan yoki o'chirilgan bo'lsa "keyingi qadam" mashq emas —
+              darslar ro'yxatiga qaytish yo'li ochiq turishi kerak. */}
+          {allDone || lesson === null ? (
             <Link to="/" className={BTN_GHOST}>
               Darslar
             </Link>
-          )}
+          ) : null}
         </div>
       </Reveal>
     </div>

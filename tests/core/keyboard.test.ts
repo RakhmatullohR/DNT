@@ -104,6 +104,48 @@ describe('mapKeydown — boshqaruv tugmalari', () => {
   })
 })
 
+describe("mapKeydown — Ctrl+Space (so'zni qayta eshitish)", () => {
+  it('`Ctrl+Space` -> replay', () => {
+    expect(mapKeydown(keydown(' ', { ctrlKey: true }))).toEqual({ type: 'replay' })
+  })
+
+  it('modifikatorsiz probel oddiy belgi bo\'lib qoladi', () => {
+    expect(mapKeydown(keydown(' '))).toEqual({
+      type: 'event',
+      event: { type: 'char', char: ' ' },
+    })
+  })
+
+  it('`Shift+Ctrl+Space` ham replay — `Shift` hech qachon hisobga olinmaydi', () => {
+    expect(mapKeydown(keydown(' ', { ctrlKey: true, shiftKey: true }))).toEqual({
+      type: 'replay',
+    })
+  })
+
+  it("boshqa modifikator qo'shilsa ilovaniki EMAS", () => {
+    // `Ctrl+Alt+Space` / `Ctrl+Meta+Space` — tizim yorliqlari bo'lishi mumkin.
+    expect(mapKeydown(keydown(' ', { ctrlKey: true, altKey: true })).type).toBe('ignore')
+    expect(mapKeydown(keydown(' ', { ctrlKey: true, metaKey: true })).type).toBe('ignore')
+    expect(mapKeydown(keydown(' ', { metaKey: true })).type).toBe('ignore')
+  })
+
+  it('IME yig\'ayotganda replay ham ishlamaydi', () => {
+    expect(mapKeydown(keydown(' ', { ctrlKey: true, isComposing: true })).type).toBe('ignore')
+  })
+
+  it("`Ctrl` bilan bosilgan BOSHQA tugmalar hamon `ignore`", () => {
+    // Yangi istisno faqat probelga tegishli, butun `Ctrl` qatoriga emas.
+    expect(mapKeydown(keydown('a', { ctrlKey: true })).type).toBe('ignore')
+    expect(mapKeydown(keydown('Enter', { ctrlKey: true })).type).toBe('ignore')
+  })
+
+  it("`Ctrl+Space` uchun `shouldPreventDefault` — true", () => {
+    // Yorliq endi ilovaniki, ya'ni probelning sahifani surishiga yo'l qo'yilmaydi.
+    expect(shouldPreventDefault(keydown(' ', { ctrlKey: true }))).toBe(true)
+    expect(shouldPreventDefault(keydown(' ', { ctrlKey: true, isComposing: true }))).toBe(false)
+  })
+})
+
 describe('mapKeydown — qolgan HAMMASI ignore', () => {
   it('navigatsiya, funksional va modifikator tugmalari e\'tiborsiz', () => {
     const keys = [
@@ -151,7 +193,8 @@ describe('shouldPreventDefault', () => {
     expect(shouldPreventDefault(keydown('Tab', { ctrlKey: true }))).toBe(false)
     expect(shouldPreventDefault(keydown('Backspace', { metaKey: true }))).toBe(false)
     expect(shouldPreventDefault(keydown('Enter', { altKey: true }))).toBe(false)
-    expect(shouldPreventDefault(keydown(' ', { ctrlKey: true }))).toBe(false)
+    // `Ctrl+Space` bu qoidadan CHIQARILGAN — pastdagi bo'limga qarang.
+    expect(shouldPreventDefault(keydown(' ', { metaKey: true }))).toBe(false)
   })
 
   it('IME yig\'ayotganda brauzerga xalaqit berilmaydi', () => {

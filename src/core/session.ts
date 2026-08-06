@@ -50,6 +50,44 @@ export function clampIndex(value: number, total: number): number {
 }
 
 /**
+ * Seans qaysi gapdan boshlanadi — TASHLANGAN gaplarni ham hisobga olib.
+ *
+ * `clampIndex` ning ustidagi bitta qoida: dars OXIRIGA yetgan bo'lsa
+ * (`progress >= total`) va `Escape` bilan tashlangan gaplar qolgan bo'lsa,
+ * seans boshidan emas, o'sha tashlanganlarning ENG KICHIGIDAN boshlanadi.
+ *
+ * Nega aynan shunday, ya'ni nega "tashlangan gapda progress oldinga surilmasin"
+ * degan soddaroq qoida EMAS: unda keyingi har bir seans o'sha ataylab tashlangan
+ * gapga qaytaverardi va undan chiqishning yagona yo'li uni yozib tugatish
+ * bo'lardi — ya'ni "tashlash" umuman ishlamay qolardi. Bu yerda esa gap
+ * seans oqimini to'xtatmaydi, faqat dars oxirida navbatga qaytadi.
+ *
+ * Eng kichigidan boshlanishi yetarli: qolgan tashlangan gaplar undan KEYIN
+ * turadi, ya'ni seans oldinga yurib ularning ustidan baribir o'tadi.
+ *
+ * Yaroqsiz indekslar (manfiy, kasr, `total` dan katta, `NaN`) e'tiborsiz
+ * qoldiriladi: ro'yxat `localStorage` dan keladi va ishonchsiz.
+ */
+export function nextSentenceIndex(
+  progress: number,
+  total: number,
+  skipped: readonly number[] = [],
+): number {
+  const start = clampIndex(progress, total)
+  const value = Math.floor(progress)
+  // `Infinity`/`NaN` "dars tugadi" belgisi emas — buzuq qiymat oddiy yo'lga tushadi.
+  if (total <= 0 || !Number.isFinite(value) || value < total) return start
+
+  let smallest = -1
+  for (const raw of skipped) {
+    const index = Math.floor(raw)
+    if (!Number.isFinite(index) || index < 0 || index >= total) continue
+    if (smallest === -1 || index < smallest) smallest = index
+  }
+  return smallest === -1 ? start : smallest
+}
+
+/**
  * Seansda ROSTDAN yozilgan gap bormi — bo'sh seans darvozasi shu javobga tayanadi (PLAN §7).
  *
  * `skipped` (Escape) yozuvlar seans HAJMINI yeydi (`sessionShouldEnd` dagi `done`),

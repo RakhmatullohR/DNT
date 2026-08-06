@@ -206,7 +206,13 @@ function Pane({ caption, hint, tone, children }: PaneProps): ReactElement {
         <span className={`${CAPTION} ${tone}`}>{caption}</span>
         <span className="text-[11px] tabular-nums text-[#7d8b9c]">{hint}</span>
       </div>
-      <div className="max-h-72 overflow-auto px-3 py-3 text-[13px] leading-[1.8] break-words whitespace-pre-wrap">
+      {/* `lang="en"`: ikkala panel ham inglizcha mashq matnini ko'rsatadi — ekran
+          o'quvchi uni sahifa tilida (o'zbek fonetikasida) emas, inglizcha talaffuz
+          bilan o'qishi kerak. */}
+      <div
+        lang="en"
+        className="max-h-72 overflow-auto px-3 py-3 text-[13px] leading-[1.8] break-words whitespace-pre-wrap"
+      >
         {children.length === 0 ? <span className="text-[#7d8b9c]">— bo'sh —</span> : children}
       </div>
     </div>
@@ -246,7 +252,7 @@ export function NormalizeDiff({ original, result }: NormalizeDiffProps): ReactEl
             </p>
             <ul className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
               {kinds.map((kind) => (
-                <li key={kind} className="flex items-center gap-1.5 text-[11px] text-[#8b98a9]">
+                <li key={kind} className="flex items-center gap-1.5 text-[11px] text-muted">
                   <span className={`h-2 w-2 rounded-[2px] ${KIND_META[kind].dot}`} aria-hidden="true" />
                   {KIND_META[kind].label}
                 </li>
@@ -257,7 +263,7 @@ export function NormalizeDiff({ original, result }: NormalizeDiffProps): ReactEl
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <Pane caption="Asl matn" hint={`${original.length} belgi`} tone="text-[#8b98a9]">
+        <Pane caption="Asl matn" hint={`${original.length} belgi`} tone="text-muted">
           {renderSegments(left)}
         </Pane>
         <Pane

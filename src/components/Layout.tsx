@@ -9,7 +9,8 @@
 // yerda xom hex takrorlanmasin va boshqa komponentlar bilan bir manbadan
 // oziqlansin.
 
-import { Link, NavLink, Outlet } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Link, NavLink, Outlet, useLocation, useNavigationType } from 'react-router-dom'
 import { ServerBanner } from './ServerBanner.tsx'
 
 /** `short` — tor ekranda ko'rsatiladigan qisqartma; usiz uchta yorliq 320px ga sig'maydi. */
@@ -17,7 +18,10 @@ type NavItem = { to: string; label: string; short?: string; end?: boolean }
 
 const NAV_ITEMS: readonly NavItem[] = [
   // `end: true` bo'lmasa `/` har qanday yo'lda faol ko'rinardi.
-  { to: '/', label: 'Bosh sahifa', short: 'Bosh', end: true },
+  // `short: 'Dars'` ataylab eski `short: 'Bosh'` bilan BIR XIL uzunlikda (4
+  // harf) — 320px ga sig'ishi allaqachon tekshirilgan (yuqoridagi izoh), shu
+  // bois to'liq `label`ni o'zgartirib, `short` uzunligini saqlab qoldik.
+  { to: '/', label: 'Darslar', short: 'Dars', end: true },
   { to: '/import', label: 'Import' },
   { to: '/stats', label: 'Statistika', short: 'Stat' },
 ]
@@ -33,6 +37,24 @@ function navClass({ isActive }: { isActive: boolean }): string {
 }
 
 export function Layout() {
+  const { pathname } = useLocation()
+  const navigationType = useNavigationType()
+
+  // Marshrut o'zgarganda tepaga qaytarish. Shart `POP` NI CHIQARIB TASHLASH
+  // orqali yozilgan, `PUSH` ni sanash orqali emas — chunki uchinchi tur ham bor:
+  //   `POP`     — ilk yuklash va "orqaga/oldinga". TEGMAYMIZ: brauzerning o'z
+  //               skroll tiklashi biznikidan yaxshiroq.
+  //   `PUSH`    — oddiy havola (masalan Stats dagi seans qatori).
+  //   `REPLACE` — `useTypingSession` seans yakunida shu bilan `/results/:id` ga
+  //               o'tadi (`navigate(..., { replace: true })`). Agar faqat `PUSH`
+  //               sanalsa, telefonda pastga surilgan mashq ekranidan kelgan
+  //               foydalanuvchi Natijalar sahifasining O'RTASIGA tushardi.
+  useEffect(() => {
+    if (navigationType !== 'POP') {
+      window.scrollTo(0, 0)
+    }
+  }, [pathname, navigationType])
+
   return (
     <div className="flex min-h-full flex-col bg-base text-text">
       <a
@@ -107,7 +129,16 @@ export function Layout() {
 
       <ServerBanner />
 
-      <main id="asosiy" className="mx-auto w-full max-w-4xl flex-1 px-4 pt-8 pb-20 sm:px-5">
+      {/* `tabIndex={-1}` — skip-link (`href="#asosiy"`) faqat skroll qilib,
+          fokusni ishonchli ko'chirmasdi: elementga oldindan `tabIndex` bo'lishi
+          shart, aks holda `<main>` dasturiy fokus uchun yaroqsiz. `-1` hech
+          narsani AVTOMATIK fokuslamaydi (Tab bilan aylanishda ham qatnashmaydi),
+          faqat skip-link bosilganda brauzer uni fokuslay olishini ta'minlaydi. */}
+      <main
+        id="asosiy"
+        tabIndex={-1}
+        className="mx-auto w-full max-w-4xl flex-1 px-4 pt-8 pb-20 sm:px-5"
+      >
         <Outlet />
       </main>
     </div>

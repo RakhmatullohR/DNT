@@ -48,6 +48,21 @@ function isShiftTab(e: KeydownInput): boolean {
 }
 
 /**
+ * `Ctrl+Space` — joriy so'zni qayta eshitish.
+ *
+ * Modifikatorli YAGONA yorliq, shuning uchun u `hasModifier` dan OLDIN
+ * tekshiriladi. Usiz bitta so'zni qayta eshitish uchun `Tab` bilan butun gapni
+ * noldan boshlash kerak edi — o'nlab belgilik ishni yo'qotib.
+ *
+ * `Ctrl` dan boshqa modifikator qo'shilsa (`Ctrl+Alt+Space`, `Ctrl+Meta+Space`)
+ * bu yorliq HISOBLANMAYDI: bunday kombinatsiyalar tizim yorliqlari bo'lishi
+ * mumkin va ular brauzerga qoldiriladi.
+ */
+function isReplay(e: KeydownInput): boolean {
+  return e.key === ' ' && e.ctrlKey && !e.metaKey && !e.altKey
+}
+
+/**
  * Keydown ni harakatga aylantiradi. Ro'yxatda yo'q hamma narsa — `ignore`
  * (`ArrowLeft`, `F5`, `Shift`, `CapsLock`, `Ctrl+A`, ...).
  *
@@ -56,6 +71,7 @@ function isShiftTab(e: KeydownInput): boolean {
  */
 export function mapKeydown(e: KeydownInput): KeyAction {
   if (e.isComposing) return { type: 'ignore' }
+  if (isReplay(e)) return { type: 'replay' }
   if (hasModifier(e)) return { type: 'ignore' }
   if (isShiftTab(e)) return { type: 'ignore' }
 
@@ -90,9 +106,15 @@ export function mapKeydown(e: KeydownInput): KeyAction {
  * Modifikator bosilgan bo'lsa `false`: `Ctrl+R`, `Meta+V`, `Ctrl+Tab` kabi
  * brauzer yorliqlari ishlashi KERAK. `Shift+Tab` ham to'xtatilmaydi — yuqoridagi
  * `isShiftTab` ga qarang.
+ *
+ * YAGONA istisno — `Ctrl+Space`: u endi ilovaniki (qayta eshitish), ya'ni
+ * probelning sahifani pastga surishi to'xtatilishi kerak. Brauzerlarda bu
+ * kombinatsiya bo'sh, IME almashtirgichi esa OS darajasida ishlaydi va
+ * `preventDefault()` unga baribir ta'sir qilmaydi.
  */
 export function shouldPreventDefault(e: KeydownInput): boolean {
   if (e.isComposing) return false
+  if (isReplay(e)) return true
   if (hasModifier(e)) return false
   if (isShiftTab(e)) return false
   return PREVENTED_KEYS.includes(e.key)

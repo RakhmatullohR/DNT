@@ -218,6 +218,31 @@ function wordTokenStartingAt(tokens: Token[], pos: number): number {
 }
 
 /**
+ * Kursor turgan — yoki undan OLDINGI eng yaqin — `word` tokeni indeksi;
+ * gapda birorta so'z bo'lmasa `-1`.
+ *
+ * Qayta eshitish (`Ctrl+Space`) shu tanlovga tayanadi. "Oldingi" tarmog'i shart:
+ * so'zni yozib bo'lgan zahoti kursor probel ustida turadi, foydalanuvchi esa
+ * AYNAN o'sha, hozirgina yozgan so'zni eshitmoqchi bo'ladi. Kursor gap oxiriga
+ * yetganda ham oxirgi so'z qaytadi.
+ *
+ * Modul sof bo'lgani uchun funksiya shu yerda: hook faqat tokenlarni beradi.
+ */
+export function wordTokenAt(tokens: Token[], pos: number): number {
+  let found = -1
+  for (let i = 0; i < tokens.length; i += 1) {
+    const t = tokens[i]
+    if (t === undefined) continue
+    if (t.start > pos) break
+    if (t.kind !== 'word') continue
+    found = i
+    // Kursor AYNAN shu so'z ichida — oldinga qarashning hojati yo'q.
+    if (pos < t.end) break
+  }
+  return found
+}
+
+/**
  * `pos` qaysi tokenga tegishli — xato hisobi shu tokenga yoziladi.
  * `pos` hech bir tokenning ichida bo'lmasa, undan KEYINGI birinchi token olinadi;
  * u ham bo'lmasa `-1`.

@@ -4,12 +4,13 @@
 // Yuqoridagi yig'indi ATAYIN kichik: bu yerda faqat "bugun qanday ketyapman"
 // degan savolga javob beriladi, chuqur ko'rinish Statistika ekranida.
 
-import { useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { DEFAULT_RATE, DEFAULT_VOICE, RATES, VOICES } from '../../shared/filename.ts'
 import { Button } from '../components/Button.tsx'
 import { EmptyState } from '../components/EmptyState.tsx'
+import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
 import { deleteLesson, getLesson, listLessons, saveLesson, setProgress } from '../store/lessons.ts'
 import type { Lesson } from '../store/lessons.ts'
 import { streakDays, totals } from '../store/stats.ts'
@@ -18,12 +19,28 @@ const PANEL = 'rounded-panel border border-white/[0.07] bg-[#0e141c]'
 const LABEL = 'font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-muted'
 // Maydon uslubi `Import.tsx` dagi bilan bir xil: ikkala ekranda ham AYNAN shu
 // ikki ro'yxat tanlanadi, ko'rinishi ham farq qilmasligi kerak.
+//
+// Fokus IKKI qatlam bilan ko'rsatiladi va bu ATAYIN takrorlanish EMAS, chunki
+// ikkovi turli hollarda yonadi:
+//   `focus:border`        — HAR QANDAY fokusda (sichqoncha, dasturiy, klaviatura)
+//   `focus-visible:ring`  — FAQAT klaviatura fokusida
+// Bu yerdagi `FIELD` faqat `<select>` ga qo'yiladi, `:focus-visible` esa
+// `<select>` sichqoncha bilan bosilganda brauzerlarda MOS KELMAYDI (matn
+// maydonlaridan farqi shu — ularda keyingi klaviatura kiritilishi kutilgani
+// uchun mos keladi). Ya'ni `focus:border` olib tashlansa, tanlagichni sichqoncha
+// bilan bosgan foydalanuvchida fokus belgisi umuman qolmaydi.
+//
+// Halqa orasi (`ring-offset`) `Button`/`Layout` dagi bilan BIR XIL qalinlikda,
+// lekin RANGI boshqa: bu maydon `#0b1219` sub-panel (ovoz/tezlik bloki) ustida
+// turadi, sahifa foni `#0b0f14` emas — mos kelmasa halqa bilan fon orasida
+// notekis qorong'i chok paydo bo'lardi.
 const FIELD = [
   'w-full rounded-control border border-white/[0.07] bg-[#0b1219] px-3 py-2.5',
   'font-mono text-[13px] text-[#e6edf3] placeholder:text-muted',
   'transition-colors duration-150 ease-out hover:border-white/[0.12]',
   'focus:border-[#5ee6c1] focus:outline-none',
   'focus-visible:ring-2 focus-visible:ring-[#5ee6c1]',
+  'focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1219]',
 ].join(' ')
 
 // Havola tugma ko'rinishida: `Button` — bu <button>, uni <a> ichiga solib
@@ -32,6 +49,14 @@ const FIELD = [
 const LINK_BTN =
   'inline-flex h-10 items-center justify-center gap-2 rounded-control border px-4 font-mono text-[13px] font-medium whitespace-nowrap transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f14]'
 const LINK_PRIMARY = `${LINK_BTN} border-transparent bg-[#5ee6c1] text-[#04231c] hover:bg-[#7cf0d3]`
+
+/**
+ * "Boshidan" bekor qilish oynasi (ms). To'liq tasdiq paneli (`O'chirish` dagi
+ * kabi) bu yerda ORTIQCHA — faqat ko'rsatkich tiklanadi, hech qanday matn
+ * yo'qolmaydi. Shuning uchun eski progress shu vaqt davomida ushlab turiladi
+ * va "Bekor qilish" bosilsa qaytariladi.
+ */
+const RESTART_UNDO_MS = 6_000
 
 // ---------------------------------------------------------------------------
 // Formatlash (ekran ichida lokal — `Results.tsx` dagi tartib bilan bir xil)
@@ -181,7 +206,17 @@ function statTokens(value: string): { text: string; unit: boolean }[] {
   })
 }
 
-function Stat({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
+function Stat({
+  label,
+  value,
+  accent = false,
+  hint,
+}: {
+  label: string
+  value: string
+  accent?: boolean
+  hint?: string
+}) {
   return (
     <div className="min-w-0">
       <dt className={LABEL}>{label}</dt>
@@ -198,6 +233,9 @@ function Stat({ label, value, accent = false }: { label: string; value: string; 
           ),
         )}
       </dd>
+      {/* Faqat `net wpm` bu izohni oladi: qolgan to'rttasi o'z-o'zidan tushunarli,
+          har biriga qo'shsak qator ortiqcha uzayib ketardi. */}
+      {hint !== undefined ? <p className="mt-1 font-mono text-[11px] text-muted">{hint}</p> : null}
     </div>
   )
 }
@@ -245,6 +283,19 @@ function LessonCard({
   const finished = total > 0 && done >= total
   const title = lesson.title === '' ? 'Nomsiz dars' : lesson.title
 
+  // `Escape` bilan tashlangan va hali yozilmagan gaplar. Progress ular ustidan
+  // ham oldinga suriladi (`session.ts` dagi `nextSentenceIndex` izohiga q.), ya'ni
+  // `done === total` bo'la turib ish tugamagan bo'lishi mumkin — shu bois
+  // "tugallangan" holati SONGA emas, shu ro'yxatga ham qarab aniqlanadi.
+  // Ro'yxat `localStorage` dan keladi, shuning uchun yaroqsiz indekslar
+  // `nextSentenceIndex` dagi bilan BIR XIL qoida bo'yicha chiqarib tashlanadi —
+  // aks holda karta o'chirib bo'lmaydigan "1 ta gap qaytadi" bilan qotib qolardi.
+  const pendingSkipped = (lesson.skipped ?? []).filter(
+    (raw) => Number.isFinite(raw) && Math.floor(raw) >= 0 && Math.floor(raw) < total,
+  ).length
+  // Dars ROSTDAN tugadi: oxiriga yetgan VA qaytadigan gap qolmagan.
+  const allDone = finished && pendingSkipped === 0
+
   // Omborda eski yoki noma'lum qiymat yotishi mumkin (`toLesson` tanimagan
   // ovozni bo'sh satrga tushiradi). Ro'yxatda yo'q qiymat berilsa `<select>`
   // bo'sh ko'rinardi — shuning uchun standartga qaytariladi.
@@ -253,11 +304,13 @@ function LessonCard({
 
   // Holat yorlig'i progress blokining o'ng ustunida chiqadi — chapdagi
   // son/foiz bilan bitta qatorda, alohida "status satri" sifatida emas.
-  const stateLabel = finished
+  const stateLabel = allDone
     ? 'tugallangan'
-    : done === 0
-      ? 'boshlanmagan'
-      : `keyingi: ${done + 1}-gap`
+    : finished
+      ? `${pendingSkipped} ta gap qaytadi`
+      : done === 0
+        ? 'boshlanmagan'
+        : `keyingi: ${done + 1}-gap`
 
   // Panel yopilganda fokuslangan "Bekor qilish" yo'qoladi, fokus esa <body> ga
   // tushib ketardi — shuning uchun u ochilishni SO'RAGAN tugmaga qaytariladi
@@ -269,7 +322,14 @@ function LessonCard({
 
   return (
     <li className={`${PANEL} p-5`}>
-      <h2 className="truncate font-mono text-[16px] font-medium text-[#e6edf3]">{title}</h2>
+      {/* `lang` SHARTLI: nomsiz darsda `title` o'zbekcha "Nomsiz dars" ga
+          tushadi — qat'iy `lang="en"` uni ingliz fonetikasida o'qitardi. */}
+      <h2
+        lang={lesson.title === '' ? undefined : 'en'}
+        className="truncate font-mono text-[16px] font-medium text-[#e6edf3]"
+      >
+        {title}
+      </h2>
       {/* Sana meta-matn sifatida sarlavhaga TIQ turadi (kichik bo'shliq) — ilgari
           bu ikkovi bir xil xira rangdagi ikkita bog'liqsiz qatorga o'xshab
           ko'rinardi. Gap soni endi shu yerda emas, progress blokida: u foiz va
@@ -323,9 +383,22 @@ function LessonCard({
           bo'shliq beradi. Tab tartibi DOM bo'yicha bir xil qoladi. */}
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Link to={`/practice/${encodeURIComponent(lesson.id)}`} className={LINK_PRIMARY}>
-          {finished ? 'Qaytadan' : done === 0 ? 'Boshlash' : 'Davom ettirish'}
+          {allDone
+            ? 'Qaytadan'
+            : finished
+              ? 'Tashlanganlarni yozish'
+              : done === 0
+                ? 'Boshlash'
+                : 'Davom ettirish'}
         </Link>
-        <Button variant="ghost" size="sm" onClick={onRestart} disabled={done === 0}>
+        {/* Dars ROSTDAN tugaganda (`allDone`) bu tugma "Qaytadan" bilan AYNAN bir
+            xil ishni qiladi — ikkovi ham 0-gapga qaytaradi — shuning uchun shu
+            holatda o'chirilgan, `done === 0` dagi kabi.
+            LEKIN oxiriga yetgan-u tashlangan gapi qolgan darsda o'chirilmaydi:
+            u yerda yuqoridagi havola `nextSentenceIndex` bo'yicha eng kichik
+            TASHLANGAN gapga boradi, 0-gapga emas — ya'ni progressni chindan
+            nolga tushirishning yagona yo'li aynan shu tugma bo'lib qoladi. */}
+        <Button variant="ghost" size="sm" onClick={onRestart} disabled={done === 0 || allDone}>
           Boshidan
         </Button>
         <Button
@@ -454,7 +527,12 @@ function LessonCard({
 // Ekran
 // ---------------------------------------------------------------------------
 
+/** "Boshidan" ni bekor qilish uchun ushlab turilgan eski davom ettirish nuqtasi. */
+type RestartUndo = { id: string; progress: number; title: string }
+
 export function Home() {
+  useDocumentTitle('Darslar')
+
   // Ro'yxat HOLATDA saqlanadi: `listLessons()` ni to'g'ridan-to'g'ri render
   // ichida chaqirsak, o'chirishdan keyin React qayta render qilish uchun sabab
   // ko'rmaydi va o'chirilgan dars ekranda qolib ketardi.
@@ -462,14 +540,56 @@ export function Home() {
   const [summary] = useState<Summary>(readSummary)
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
+  const [restartUndo, setRestartUndo] = useState<RestartUndo | null>(null)
 
   // O'chirishdan keyin fokus shu sarlavhaga qo'yiladi — u ro'yxat chizilganda
   // ham, bo'sh holat chizilganda ham joyida qoladigan yagona nuqta.
   const headingRef = useRef<HTMLHeadingElement>(null)
 
+  // "Boshidan" oynasining taymeri. Ref da: o'zgarishi qayta renderni talab
+  // qilmaydi, faqat keyingi bosishda eskisini bekor qilish uchun kerak.
+  const restartTimerRef = useRef<number | null>(null)
+
+  function clearRestartTimer(): void {
+    if (restartTimerRef.current !== null) {
+      window.clearTimeout(restartTimerRef.current)
+      restartTimerRef.current = null
+    }
+  }
+
+  // Komponent uzilganda taymer osilib qolmasin — uzilgan komponentda `setState`
+  // chaqirish ogohlantirish beradi (`Reveal.tsx` dagi bilan bir xil qoida).
+  useEffect(() => clearRestartTimer, [])
+
   function handleRestart(id: string): void {
+    const target = lessons.find((lesson) => lesson.id === id)
+    if (target === undefined) return
+    const title = target.title === '' ? 'Nomsiz dars' : target.title
+
     setProgress(id, 0)
     setLessons(listLessons())
+
+    // ⚠️ NUANS: shu kartadagi `O'chirish` ikki bosqichli tasdiq bilan
+    // himoyalangan, lekin bu yerga to'liq tasdiq paneli ORTIQCHA — tasdiq
+    // qaytarib bo'lmaydigan MA'LUMOT yo'qolishiga ajratilgan, ko'rsatkich
+    // tiklashga emas. Shuning uchun arzonroq yo'l: eski indeks bir necha
+    // soniya ushlab turiladi va shu oynada "Bekor qilish" bilan qaytariladi.
+    clearRestartTimer()
+    setRestartUndo({ id, progress: target.progress, title })
+    setNotice(`«${title}» boshidan boshlandi.`)
+    restartTimerRef.current = window.setTimeout(() => {
+      setRestartUndo(null)
+      restartTimerRef.current = null
+    }, RESTART_UNDO_MS)
+  }
+
+  function handleUndoRestart(): void {
+    if (restartUndo === null) return
+    clearRestartTimer()
+    setProgress(restartUndo.id, restartUndo.progress)
+    setLessons(listLessons())
+    setNotice(`«${restartUndo.title}» boshidan boshlash bekor qilindi.`)
+    setRestartUndo(null)
   }
 
   function handleDelete(id: string): void {
@@ -484,6 +604,15 @@ export function Home() {
     const next = listLessons()
     setConfirmId(null)
     setLessons(next)
+
+    // Shu darsning "Boshidan" bekor qilish oynasi ochiq bo'lsa, uni yopamiz:
+    // dars endi o'chirilgan, `setProgress` o'chirilgan `id` uchun jimgina
+    // qaytadi (qarang: `store/lessons.ts`), ya'ni "Bekor qilish" osilib qolgan
+    // bannerdek hech narsa qilmay turib qolardi.
+    if (restartUndo !== null && restartUndo.id === id) {
+      clearRestartTimer()
+      setRestartUndo(null)
+    }
 
     // Fokus ko'chishining o'zi "nima bo'ldi?" degan savolga javob bermaydi —
     // e'lon matni qolgan darslar sonini ham aytadi. Son har safar o'zgargani
@@ -528,10 +657,18 @@ export function Home() {
             ustun ~213px beradi, `lg` da esa besh trek ~152px — eng uzun qiymatdan
             ham keng. Tor ekranda ikkita ustun qoladi. */}
         <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 lg:grid-cols-5">
+          {/* Tartib Stats.tsx bilan KANONIK: net wpm -> aniqlik -> seans -> faol
+              vaqt -> seriya. Bir xil beshta raqam ikki ekranda boshqa tartibda
+              turishi "Batafsil" bosgan foydalanuvchini chalg'itardi. */}
+          <Stat
+            label="net wpm"
+            value={formatWpm(summary.netWpm)}
+            accent
+            hint="Faol vaqtga og'irliklangan"
+          />
+          <Stat label="aniqlik" value={formatPercent(summary.accuracy)} />
           <Stat label="seans" value={String(summary.sessions)} />
           <Stat label="faol vaqt" value={formatDuration(summary.activeMs)} />
-          <Stat label="net wpm" value={formatWpm(summary.netWpm)} accent />
-          <Stat label="aniqlik" value={formatPercent(summary.accuracy)} />
           <Stat label="seriya" value={`${summary.streak} kun`} />
         </dl>
       </section>
@@ -542,6 +679,21 @@ export function Home() {
         <p role="status" aria-live="polite" className="sr-only">
           {notice}
         </p>
+
+        {/* "Boshidan" bekor qilish banneri. `notice` DAN ATAYIN mustaqil —
+            u yuqoridagi sr-only e'londa alohida ishlatiladi va keyinroq boshqa
+            harakat (masalan, o'chirish) uni ustidan yozib qo'yishi mumkin;
+            shu banner esa faqat `restartUndo` borligiga qarab chiziladi. */}
+        {restartUndo !== null ? (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-control border border-white/10 bg-white/[0.03] px-4 py-2.5">
+            <span className="font-mono text-[12px] text-muted">
+              «{restartUndo.title}» boshidan boshlandi.
+            </span>
+            <Button variant="ghost" size="sm" onClick={handleUndoRestart}>
+              Bekor qilish
+            </Button>
+          </div>
+        ) : null}
 
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
           <h1
