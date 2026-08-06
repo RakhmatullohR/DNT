@@ -21,7 +21,7 @@ const NAV_ITEMS: readonly NavItem[] = [
 
 function navClass({ isActive }: { isActive: boolean }): string {
   return [
-    'relative flex h-14 items-center font-mono text-[11.5px] tracking-[0.06em] sm:text-[12.5px]',
+    'relative flex h-14 items-center font-mono text-[13px]',
     'transition-colors duration-150 ease-out',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5ee6c1]',
     'focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f14] rounded-xs',
@@ -34,7 +34,7 @@ export function Layout() {
     <div className="flex min-h-full flex-col bg-[#0b0f14] text-[#e6edf3]">
       <a
         href="#asosiy"
-        className="sr-only focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-50 focus:rounded-sm focus:bg-[#5ee6c1] focus:px-3 focus:py-2 focus:font-mono focus:text-[12px] focus:text-[#04231c]"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-50 focus:rounded-sm focus:bg-[#5ee6c1] focus:px-3 focus:py-2 focus:font-mono focus:text-[13px] focus:text-[#04231c]"
       >
         Asosiy qismga o&apos;tish
       </a>
@@ -45,7 +45,7 @@ export function Layout() {
             to="/"
             className="flex h-14 items-center gap-2 rounded-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f14]"
           >
-            <span className="font-mono text-[15px] font-semibold tracking-[0.22em] text-[#e6edf3]">
+            <span className="font-mono text-[16px] font-medium tracking-[0.22em] text-[#e6edf3]">
               dnt
             </span>
             {/* Yonib-o'chuvchi kursor — yozuv mashqining o'zi haqidagi yagona ishora. */}
@@ -53,7 +53,7 @@ export function Layout() {
               aria-hidden="true"
               className="inline-block h-3.75 w-1.75 animate-pulse bg-[#5ee6c1]"
             />
-            <span className="ml-1 hidden font-mono text-[11px] tracking-[0.16em] text-[#66788a] sm:inline">
+            <span className="ml-1 hidden font-mono text-[11px] text-[#7d8fa1] sm:inline">
               eshit va yoz
             </span>
           </Link>

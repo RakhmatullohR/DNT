@@ -23,13 +23,13 @@ import { listLessons, newLessonId, saveLesson } from '../store/lessons.ts'
 import type { Lesson } from '../store/lessons.ts'
 
 const PANEL = 'rounded-2xl border border-white/[0.07] bg-[#0e141c]'
-const LABEL = 'font-mono text-[10px] uppercase tracking-[0.22em] text-[#7d8b9c]'
+const LABEL = 'font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-[#7d8b9c]'
 const FIELD = [
   'w-full rounded-lg border border-white/[0.07] bg-[#0b1219] px-3 py-2.5',
-  'font-mono text-[13px] text-[#e6edf3] placeholder:text-[#4a5768]',
+  'font-mono text-[13px] text-[#e6edf3] placeholder:text-[#7d8b9c]',
   'transition-colors duration-150 ease-out hover:border-white/[0.12]',
-  'focus:border-[#4fe0a8]/40 focus:outline-none',
-  'focus-visible:ring-2 focus-visible:ring-[#5ee6c1]/40',
+  'focus:border-[#5ee6c1] focus:outline-none',
+  'focus-visible:ring-2 focus-visible:ring-[#5ee6c1]',
 ].join(' ')
 
 /** PLAN §2c: paste hajmi shu songa cheklanadi. */
@@ -348,7 +348,7 @@ export function Import() {
   return (
     <div className="w-full">
       <div className={LABEL}>import</div>
-      <h1 className="mt-2 font-mono text-xl font-semibold text-[#e6edf3] sm:text-2xl">
+      <h1 className="mt-2 font-mono text-[21px] font-semibold text-[#e6edf3]">
         Yangi dars
       </h1>
       <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-[#7d8b9c]">
@@ -382,7 +382,7 @@ export function Import() {
           </label>
           <span
             className={`font-mono text-[11px] tabular-nums ${
-              overLimit ? 'text-[#ff6b6b]' : 'text-[#5c6b7d]'
+              overLimit ? 'text-[#ff6b6b]' : 'text-[#7d8b9c]'
             }`}
           >
             {wordCount} / {MAX_WORDS} so&apos;z
@@ -394,7 +394,7 @@ export function Import() {
           onChange={(event) => setRaw(event.target.value)}
           spellCheck={false}
           placeholder="Matnni shu yerga joylashtiring..."
-          className={`${FIELD} mt-2 min-h-56 resize-y leading-[1.7]`}
+          className={`${FIELD} mt-2 min-h-56 resize-y leading-[1.8]`}
         />
 
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
@@ -441,7 +441,7 @@ export function Import() {
             </select>
           </div>
         </div>
-        <p className="mt-3 font-mono text-[11px] leading-relaxed text-[#5c6b7d]">
+        <p className="mt-3 font-mono text-[11px] leading-relaxed text-[#7d8b9c]">
           Ovoz va tezlik darsga bog&apos;lanadi: audio fayl nomi ulardan hosil bo&apos;ladi,
           shuning uchun keyin o&apos;zgartirish so&apos;zlarni qaytadan sintez qilishni talab
           qiladi.
@@ -476,14 +476,14 @@ export function Import() {
         <section className={`${PANEL} mt-4 p-5 sm:p-6`}>
           <div className="flex flex-wrap items-baseline justify-between gap-3">
             <h2 className={LABEL}>gaplar</h2>
-            <span className="font-mono text-[11px] text-[#5c6b7d] tabular-nums">
+            <span className="font-mono text-[11px] text-[#7d8b9c] tabular-nums">
               {rows.length} ta gap · {countWords(analysis.result.text)} so&apos;z
             </span>
           </div>
 
           {longRows.length > 0 ? (
             <div className="mt-4 rounded-lg border border-[#3a2c12] bg-[#151007] px-4 py-3">
-              <p className="font-mono text-[12px] leading-relaxed text-[#e0cfa8]">
+              <p className="font-mono text-[13px] leading-relaxed text-[#e0cfa8]">
                 <span className="tabular-nums">{longRows.length}</span> ta gap{' '}
                 {LONG_SENTENCE_WORDS} so&apos;zdan uzun. Uzun gapni bir urinishda xatosiz terish
                 charchatadi — &laquo;Bo&apos;lish&raquo; tugmasi bilan ularni qismlarga ajrating.
@@ -519,15 +519,15 @@ export function Import() {
                     }`}
                   >
                     <div className="flex items-start gap-3">
-                      <span className="w-7 shrink-0 pt-0.5 text-right font-mono text-[11px] text-[#4a5768] tabular-nums">
+                      <span className="w-7 shrink-0 pt-0.5 text-right font-mono text-[11px] text-[#7d8b9c] tabular-nums">
                         {row.index + 1}
                       </span>
-                      <p className="min-w-0 flex-1 font-mono text-[12.5px] leading-relaxed text-[#c6d3de]">
+                      <p className="min-w-0 flex-1 font-mono text-[13px] leading-relaxed text-[#c6d3de]">
                         {row.text}
                       </p>
                       <span
                         className={`shrink-0 pt-0.5 font-mono text-[11px] tabular-nums ${
-                          isLong ? 'text-[#f2b344]' : 'text-[#4a5768]'
+                          isLong ? 'text-[#f2b344]' : 'text-[#7d8b9c]'
                         }`}
                       >
                         {row.words}
@@ -559,7 +559,7 @@ export function Import() {
                               current === null ? current : { ...current, draft },
                             )
                           }}
-                          className={`${FIELD} mt-2 min-h-24 resize-y leading-[1.7]`}
+                          className={`${FIELD} mt-2 min-h-24 resize-y leading-[1.8]`}
                         />
                         <div className="mt-2 flex gap-2">
                           <Button
@@ -627,7 +627,7 @@ export function Import() {
                 : 'Import qilib boshlash'}
           </Button>
           {phase.kind === 'idle' ? (
-            <p className="font-mono text-[11px] leading-relaxed text-[#5c6b7d]">
+            <p className="font-mono text-[11px] leading-relaxed text-[#7d8b9c]">
               {analyzing
                 ? "Yozuv to'xtagach gaplar ro'yxati yangilanadi va import ochiladi."
                 : `Dastlabki ${HEAD_SENTENCES} gap sintez qilinishi bilan mashq ochiladi — qolgani fonda tayyorlanadi.`}
@@ -642,7 +642,7 @@ export function Import() {
             <span className={LABEL}>
               {phase.total === 0 ? 'tayyorlanmoqda' : `dastlabki ${HEAD_SENTENCES} gap`}
             </span>
-            <span className="font-mono text-[11px] text-[#5c6b7d] tabular-nums">
+            <span className="font-mono text-[11px] text-[#7d8b9c] tabular-nums">
               {phase.done} / {phase.total} so&apos;z
             </span>
           </div>
@@ -655,13 +655,13 @@ export function Import() {
             className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]"
           >
             <span
-              className="block h-full rounded-full bg-[#4fe0a8] motion-safe:transition-[width] motion-safe:duration-300 motion-safe:ease-out"
+              className="block h-full rounded-full bg-[#5ee6c1] motion-safe:transition-[width] motion-safe:duration-300 motion-safe:ease-out"
               style={{
                 width: `${phase.total === 0 ? 4 : Math.round((phase.done / phase.total) * 100)}%`,
               }}
             />
           </div>
-          <p className="mt-3 font-mono text-[11px] leading-relaxed text-[#5c6b7d]">
+          <p className="mt-3 font-mono text-[11px] leading-relaxed text-[#7d8b9c]">
             Dars allaqachon saqlandi. Qolgan gaplar mashq boshlangandan keyin fonda sintez
             qilinadi.
           </p>

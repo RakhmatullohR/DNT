@@ -24,7 +24,7 @@ export type SparklineProps = {
   label?: string
 }
 
-const LINE = '#4fe0a8'
+const LINE = '#5ee6c1'
 const GRID = 'rgba(230, 237, 243, 0.07)'
 
 /** Chiziq chetga yopishib qolmasligi uchun ichki chekinishlar (viewBox birligida). */
@@ -118,14 +118,14 @@ export function Sparkline({ values, width = 320, height = 76, label }: Sparkline
     <div className="w-full">
       {label !== undefined && label !== '' ? (
         <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7d8b9c]">
+          <span className="font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-[#7d8b9c]">
             {label}
           </span>
           {n > 0 ? (
-            <span className="font-mono text-[10px] tabular-nums text-[#5c6b7d]">
+            <span className="font-mono text-[11px] tabular-nums text-[#7d8b9c]">
               past {fmt(lo)} <span className="text-[#33404f]">·</span> yuqori {fmt(hi)}{' '}
               <span className="text-[#33404f]">·</span>{' '}
-              <span className="text-[#4fe0a8]">oxirgi {fmt(last)}</span>
+              <span className="text-[#5ee6c1]">oxirgi {fmt(last)}</span>
             </span>
           ) : null}
         </div>
@@ -212,13 +212,13 @@ export function Sparkline({ values, width = 320, height = 76, label }: Sparkline
               transition: `opacity ${anim.ms}ms ease-out`,
             }}
           >
-            <span className="absolute -inset-1.5 animate-ping rounded-full bg-[#4fe0a8]/25" />
-            <span className="relative block h-1.5 w-1.5 rounded-full bg-[#4fe0a8] ring-2 ring-[#0b0f14]" />
+            <span className="absolute -inset-1.5 animate-ping rounded-full bg-[#5ee6c1]/25" />
+            <span className="relative block h-1.5 w-1.5 rounded-full bg-[#5ee6c1] ring-2 ring-[#0b0f14]" />
           </span>
         ) : null}
 
         {n === 0 ? (
-          <span className="pointer-events-none absolute inset-0 flex items-center justify-center font-mono text-[10px] uppercase tracking-[0.2em] text-[#4a5768]">
+          <span className="pointer-events-none absolute inset-0 flex items-center justify-center font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-[#7d8b9c]">
             ma&apos;lumot yo&apos;q
           </span>
         ) : null}

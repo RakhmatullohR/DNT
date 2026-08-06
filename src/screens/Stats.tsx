@@ -42,11 +42,11 @@ import {
 import type { AudioBucket, AudioComparison, StatsData } from '../store/stats.ts'
 
 const PANEL = 'rounded-2xl border border-white/[0.07] bg-[#0e141c]'
-const LABEL = 'font-mono text-[10px] uppercase tracking-[0.22em] text-[#7d8b9c]'
-const NOTE = 'font-mono text-[11px] leading-relaxed text-[#5c6b7d]'
+const LABEL = 'font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-[#7d8b9c]'
+const NOTE = 'font-mono text-[11px] leading-relaxed text-[#7d8b9c]'
 
 const LINK_BTN =
-  'inline-flex h-10 items-center justify-center gap-2 rounded-sm border px-4 font-mono text-[13px] font-medium tracking-[0.04em] whitespace-nowrap transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f14]'
+  'inline-flex h-10 items-center justify-center gap-2 rounded-sm border px-4 font-mono text-[13px] font-medium whitespace-nowrap transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f14]'
 const LINK_PRIMARY = `${LINK_BTN} border-transparent bg-[#5ee6c1] text-[#04231c] hover:bg-[#7cf0d3]`
 
 /** Trend uchun tanlanadigan oraliqlar. */
@@ -211,12 +211,12 @@ function Metric({ label, value, hint, color }: { label: string; value: string; h
     <div className={`${PANEL} p-4 sm:p-5`}>
       <div className={LABEL}>{label}</div>
       <div
-        className="mt-2.5 font-mono text-2xl leading-none font-semibold tabular-nums sm:text-3xl"
+        className="mt-2.5 font-mono text-[21px] leading-none font-semibold tabular-nums"
         style={{ color: color ?? '#e6edf3' }}
       >
         {value}
       </div>
-      {hint !== undefined ? <div className="mt-2 font-mono text-[11px] text-[#5c6b7d]">{hint}</div> : null}
+      {hint !== undefined ? <div className="mt-2 font-mono text-[11px] text-[#7d8b9c]">{hint}</div> : null}
     </div>
   )
 }
@@ -234,22 +234,22 @@ function GateColumn({ title, bucket, accent }: { title: string; bucket: AudioBuc
   return (
     <div className="rounded-xl border border-white/[0.06] bg-[#0b1118] p-4">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="font-mono text-[11px] tracking-[0.12em] text-[#7d8b9c]">{title}</span>
-        <span className="font-mono text-[10px] tabular-nums text-[#4a5768]">
+        <span className="font-mono text-[11px] text-[#7d8b9c]">{title}</span>
+        <span className="font-mono text-[11px] tabular-nums text-[#7d8b9c]">
           {bucket.sentences} gap
         </span>
       </div>
       <div
-        className="mt-3 font-mono text-2xl leading-none font-semibold tabular-nums"
+        className="mt-3 font-mono text-[16px] font-medium tabular-nums"
         style={{ color: accent }}
       >
         {formatWpm(bucket.netWpm)}
       </div>
-      <div className="mt-1 font-mono text-[10px] text-[#4a5768]">net wpm</div>
+      <div className="mt-1 font-mono text-[11px] text-[#7d8b9c]">net wpm</div>
       <div className="mt-3 font-mono text-[13px] tabular-nums text-[#e6edf3]">
         {formatPercent(bucket.accuracy)}
       </div>
-      <div className="mt-1 font-mono text-[10px] text-[#4a5768]">aniqlik</div>
+      <div className="mt-1 font-mono text-[11px] text-[#7d8b9c]">aniqlik</div>
     </div>
   )
 }
@@ -348,7 +348,7 @@ export function Stats() {
         <h1 className={LABEL}>statistika</h1>
         <Link
           to="/"
-          className="font-mono text-[11px] tracking-wide text-[#7d8b9c] underline decoration-white/20 underline-offset-4 transition-colors hover:text-[#e6edf3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ee6c1]"
+          className="font-mono text-[11px] text-[#7d8b9c] underline decoration-white/20 underline-offset-4 transition-colors hover:text-[#e6edf3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ee6c1]"
         >
           Darslar
         </Link>
@@ -400,7 +400,7 @@ export function Stats() {
                     type="button"
                     onClick={() => setRange(days)}
                     aria-pressed={days === range}
-                    className={`h-7 rounded-xs px-2.5 font-mono text-[11px] tabular-nums transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5ee6c1] ${
+                    className={`h-7 rounded-xs px-2.5 font-mono text-[11px] font-medium tabular-nums transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5ee6c1] ${
                       days === range
                         ? 'bg-[#5ee6c1]/15 text-[#5ee6c1]'
                         : 'text-[#7d8b9c] hover:text-[#e6edf3]'
@@ -424,7 +424,7 @@ export function Stats() {
             <div className="mt-6">
               <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                 <span className={LABEL}>kunlik to&apos;g&apos;ri bosishlar</span>
-                <span className="font-mono text-[10px] tabular-nums text-[#5c6b7d]">
+                <span className="font-mono text-[11px] tabular-nums text-[#7d8b9c]">
                   {activeDays} / {series.length} kun chegaradan o&apos;tgan
                 </span>
               </div>
@@ -446,7 +446,7 @@ export function Stats() {
           <section className={`${PANEL} p-5 sm:p-6`}>
             <div className="flex flex-wrap items-baseline justify-between gap-3">
               <h2 className={LABEL}>eng qiyin so&apos;zlar</h2>
-              <span className="font-mono text-[10px] text-[#4a5768]">xato / ta&apos;sirlanish</span>
+              <span className="font-mono text-[11px] text-[#7d8b9c]">xato / ta&apos;sirlanish</span>
             </div>
 
             {snapshot.hardest.length === 0 ? (
@@ -475,10 +475,10 @@ export function Stats() {
                       <span className="truncate font-mono text-[13px] text-[#e6edf3]">
                         {row.word}
                       </span>
-                      <span className="font-mono text-[11px] tabular-nums text-[#5c6b7d]">
+                      <span className="font-mono text-[11px] tabular-nums text-[#7d8b9c]">
                         {row.errors} / {row.exposures}
                       </span>
-                      <span className="w-12 text-right font-mono text-[12px] tabular-nums text-[#ff8b8b]">
+                      <span className="w-12 text-right font-mono text-[13px] tabular-nums text-[#ff8b8b]">
                         {Math.round(row.rate * 100)}%
                       </span>
                     </li>
@@ -505,7 +505,7 @@ export function Stats() {
           <section className={`${PANEL} p-5 sm:p-6`}>
             <div className="flex flex-wrap items-baseline justify-between gap-3">
               <h2 className={LABEL}>ovozli / ovozsiz taqqoslash</h2>
-              <span className="font-mono text-[10px] text-[#4a5768]">m2/m3 gate</span>
+              <span className="font-mono text-[11px] text-[#7d8b9c]">m2/m3 gate</span>
             </div>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -526,14 +526,14 @@ export function Stats() {
             ) : (
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
                 <div className="rounded-xl border border-white/[0.06] bg-[#0b1118] p-4">
-                  <div className="font-mono text-[10px] text-[#4a5768]">wpm farqi</div>
-                  <div className="mt-2 font-mono text-lg tabular-nums text-[#e6edf3]">
+                  <div className="font-mono text-[11px] text-[#7d8b9c]">wpm farqi</div>
+                  <div className="mt-2 font-mono text-[16px] font-medium tabular-nums text-[#e6edf3]">
                     {formatWpmDelta(snapshot.audio.on.netWpm - snapshot.audio.off.netWpm)}
                   </div>
                 </div>
                 <div className="rounded-xl border border-white/[0.06] bg-[#0b1118] p-4">
-                  <div className="font-mono text-[10px] text-[#4a5768]">aniqlik farqi</div>
-                  <div className="mt-2 font-mono text-lg tabular-nums text-[#e6edf3]">
+                  <div className="font-mono text-[11px] text-[#7d8b9c]">aniqlik farqi</div>
+                  <div className="mt-2 font-mono text-[16px] font-medium tabular-nums text-[#e6edf3]">
                     {formatPercentDelta(snapshot.audio.on.accuracy - snapshot.audio.off.accuracy)}
                   </div>
                 </div>
@@ -572,14 +572,14 @@ export function Stats() {
                         <span className="block truncate font-mono text-[13px] text-[#e6edf3]">
                           {session.lessonTitle === '' ? 'Nomsiz dars' : session.lessonTitle}
                         </span>
-                        <span className="mt-0.5 block font-mono text-[10.5px] tabular-nums text-[#5c6b7d]">
+                        <span className="mt-0.5 block font-mono text-[11px] tabular-nums text-[#7d8b9c]">
                           {formatDateTime(session.startedAt > 0 ? session.startedAt : session.endedAt)}
                         </span>
                       </span>
-                      <span className="font-mono text-[12px] tabular-nums text-[#5ee6c1]">
+                      <span className="font-mono text-[13px] tabular-nums text-[#5ee6c1]">
                         {formatWpm(session.netWpm)} wpm
                       </span>
-                      <span className="w-14 text-right font-mono text-[12px] tabular-nums text-[#7d8b9c]">
+                      <span className="w-14 text-right font-mono text-[13px] tabular-nums text-[#7d8b9c]">
                         {formatPercent(session.accuracy)}
                       </span>
                     </Link>
@@ -618,7 +618,7 @@ export function Stats() {
 
         {damaged.map((row) => (
           <div key={row.id} className="mt-4 rounded-sm border border-[#3a3520] bg-[#15130d] p-4">
-            <p className="font-mono text-[12px] leading-relaxed text-[#f2cf8a]">
+            <p className="font-mono text-[13px] leading-relaxed text-[#f2cf8a]">
               Shu brauzerda saqlangan <span className="text-[#e6edf3]">{row.store}</span> ma&apos;lumoti
               o&apos;qib bo&apos;lmaydigan holatda topilgan edi. Dastur uni o&apos;chirmadi —
               alohida joyga ko&apos;chirib qo&apos;ydi ({row.raw.length} belgi). Uni fayl qilib
@@ -647,7 +647,7 @@ export function Stats() {
 
             {damagedArmed !== null && damagedArmed.id === row.id ? (
               <div className="mt-3 rounded-sm border border-[#452027] bg-[#160f12] p-4">
-                <p className="font-mono text-[12px] leading-relaxed text-[#ff9f9f]">
+                <p className="font-mono text-[13px] leading-relaxed text-[#ff9f9f]">
                   Bu nusxa butunlay o&apos;chiriladi va qaytarib bo&apos;lmaydi — u
                   ma&apos;lumotning oxirgi qolgan izi bo&apos;lishi mumkin. Avval yuklab olib
                   qo&apos;yish tavsiya etiladi.
@@ -738,7 +738,7 @@ export function Stats() {
             {/* Import BIRLASHTIRMAYDI, ALMASHTIRADI — `stats.ts` dagi izohda sababi: aks
                 holda bitta faylni ikki marta import qilish yig'indilarni ikkilantirardi.
                 Shuning uchun ogohlantirish fayl tanlashdan OLDIN ko'rsatiladi. */}
-            <p className="font-mono text-[12px] leading-relaxed text-[#f2cf8a]">
+            <p className="font-mono text-[13px] leading-relaxed text-[#f2cf8a]">
               Import mavjud statistikani TO&apos;LIQ almashtiradi — birlashtirmaydi. Hozirgi
               seanslar, kunlik yig&apos;indi va so&apos;z reytingi fayldagisi bilan
               o&apos;rnini bo&apos;shatadi. Avval joriy holatni eksport qilib qo&apos;yish
@@ -757,7 +757,7 @@ export function Stats() {
 
         {clearArmed ? (
           <div className="mt-4 rounded-sm border border-[#452027] bg-[#160f12] p-4">
-            <p className="font-mono text-[12px] leading-relaxed text-[#ff9f9f]">
+            <p className="font-mono text-[13px] leading-relaxed text-[#ff9f9f]">
               Barcha seanslar, kunlik yig&apos;indi va so&apos;z reytingi o&apos;chiriladi.
               Qaytarib bo&apos;lmaydi. Darslar (matnlar) esa joyida qoladi.
             </p>
@@ -775,7 +775,7 @@ export function Stats() {
         {message !== null ? (
           <p
             role="status"
-            className={`mt-4 font-mono text-[12px] leading-relaxed ${
+            className={`mt-4 font-mono text-[13px] leading-relaxed ${
               message.kind === 'ok' ? 'text-[#5ee6c1]' : 'text-[#ff9f9f]'
             }`}
           >

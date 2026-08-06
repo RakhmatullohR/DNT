@@ -7,7 +7,7 @@
 // marta hisoblab yuborardi. Shu sababli "Enter bosing" ko'rsatkichi ham
 // tugma emas, balki shunchaki ko'rsatma.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { Button } from '../components/Button.tsx'
@@ -17,13 +17,19 @@ import { useTypingSession } from '../hooks/useTypingSession.ts'
 import type { Lesson } from '../store/lessons.ts'
 import { getLesson } from '../store/lessons.ts'
 
-const PANEL = 'rounded-2xl border border-white/[0.07] bg-[#0e141c]'
-const LABEL = 'font-mono text-[10px] uppercase tracking-[0.22em] text-[#7d8b9c]'
+const PANEL = 'rounded-sm border border-[#1d2833] bg-[#0e141c]'
+const LABEL = 'font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-[#7d8b9c]'
 const KBD =
-  'rounded-sm border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10.5px] text-[#c6d3de]'
-/** `Link` tugma ko'rinishida — `Button.tsx` faqat `<button>` chiqaradi. */
+  'rounded-sm border border-[#22303d] bg-[#131b23] px-1.5 py-0.5 font-mono text-[11px] text-[#c6d3de]'
+/**
+ * `Link` tugma ko'rinishida — `Button.tsx` faqat `<button>` chiqaradi.
+ *
+ * Fokus halqasi offseti `#0e141c`, `#0b0f14` emas: bu havolalar faqat `NotFound`
+ * panelining USTIDA turadi. Sahifa foniga sozlangan offset panel ustida halqa
+ * ostidan qorong'i chok bo'lib chiqardi.
+ */
 const LINK_BTN_BASE =
-  'inline-flex h-10 items-center justify-center rounded-sm border px-4 font-mono text-[13px] font-medium tracking-[0.04em] transition-colors duration-150 ease-out focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f14] focus-visible:outline-none'
+  'inline-flex h-10 items-center justify-center rounded-sm border px-4 font-mono text-[13px] font-medium transition-colors duration-150 ease-out focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0e141c] focus-visible:outline-none'
 const LINK_BTN_PRIMARY = `${LINK_BTN_BASE} border-transparent bg-[#5ee6c1] text-[#04231c] hover:bg-[#7cf0d3]`
 const LINK_BTN_GHOST = `${LINK_BTN_BASE} border-[#22303d] text-[#c6d3de] hover:border-[#334556] hover:bg-[#131b23] hover:text-[#e6edf3]`
 
@@ -90,13 +96,13 @@ function Stat({
       <div className={LABEL}>{label}</div>
       <div className="mt-2 flex items-baseline gap-1.5">
         <span
-          className="font-mono text-2xl leading-none font-semibold tabular-nums"
+          className="font-mono text-[16px] font-medium tabular-nums"
           style={{ color }}
         >
           {value}
         </span>
         {unit !== undefined ? (
-          <span className="font-mono text-[10.5px] tracking-wide text-[#5c6b7d]">{unit}</span>
+          <span className="font-mono text-[11px] text-[#7d8b9c]">{unit}</span>
         ) : null}
       </div>
     </div>
@@ -105,7 +111,7 @@ function Stat({
 
 function Bar({ value, color }: { value: number; color: string }) {
   return (
-    <span className="block h-1 w-full overflow-hidden rounded-full bg-white/[0.06]">
+    <span className="block h-1 w-full overflow-hidden rounded-full bg-[#1d2833]">
       <span
         className="block h-full rounded-full transition-[width] duration-300 ease-out motion-reduce:transition-none"
         style={{ width: `${ratioToPercent(value)}%`, backgroundColor: color }}
@@ -148,19 +154,19 @@ function BlockedHint({ blocked, expected }: { blocked: BlockedKey; expected: str
   return (
     <div
       className={[
-        'flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl border border-[#ff6b6b]/40 px-4 py-3',
+        'flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-sm border border-[#ff6b6b]/40 px-4 py-3',
         'origin-left transition-all duration-300 ease-out motion-reduce:transition-none',
         settled ? 'scale-100 bg-[#ff6b6b]/[0.07]' : 'scale-[1.02] bg-[#ff6b6b]/25',
       ].join(' ')}
     >
-      <span className="font-mono text-[10px] tracking-[0.22em] text-[#ff8b8b] uppercase">
+      <span className="font-mono text-[11px] font-medium tracking-[0.22em] text-[#ff8b8b] uppercase">
         xato
       </span>
-      <span className="font-mono text-[12.5px] text-[#f0c9c9]">
+      <span className="font-mono text-[13px] text-[#f0c9c9]">
         {keyName(blocked.wrong)} bosildi — kursor turib qoldi.
       </span>
       {expected === undefined ? null : (
-        <span className="font-mono text-[12.5px] text-[#8b98a9]">
+        <span className="font-mono text-[13px] text-[#8b98a9]">
           {caseOnly
             ? needsShift
               ? `Shift kerak: ${keyName(expected)}`
@@ -189,7 +195,7 @@ function Sentence({ state, blocked }: { state: TypingState; blocked: BlockedKey 
       {/* Belgilarga bo'lingan matnni ekran o'quvchisi harflab o'qib chiqardi. */}
       <div
         aria-hidden="true"
-        className="font-mono text-[21px] leading-[1.85] tracking-[0.01em] break-words whitespace-pre-wrap sm:text-[25px]"
+        className="font-mono text-[21px] leading-[1.8] break-words whitespace-pre-wrap sm:text-[25px]"
       >
         {chars.map((ch, i) => {
           const errors = state.charErrors.get(i) ?? 0
@@ -209,13 +215,20 @@ function Sentence({ state, blocked }: { state: TypingState; blocked: BlockedKey 
                   blocked !== null
                     ? 'text-[#ffc2c2]'
                     : errors > 0
-                      ? 'text-[#8a6a70]'
-                      : 'text-[#46566a]',
+                      ? 'text-[#b08a90]'
+                      : 'text-[#7d8b9c]',
                 ].join(' ')}
               >
-                {/* Kursor chizig'i alohida element: probel ustida ham ko'rinadi. */}
+                {/* Kursor chizig'i alohida element: probel ustida ham ko'rinadi.
+                    Yonib-o'chish ATAYIN yo'q: `animate-pulse` sikl davomida
+                    shaffoflikni 50% ga tushiradi va bloklangan holatda kontrast
+                    2.49:1 gacha pasayadi (3:1 dan past). Kursor o'rinni
+                    ko'rsatuvchi yagona signal bo'lgani uchun uning ko'rinishi
+                    hech qachon pasaymasligi kerak. Qolaversa animatsiya 2 s,
+                    kursor esa har ~200 ms da siljiydi — ya'ni u har safar
+                    tasodifiy shaffoflikda paydo bo'lardi. */}
                 <span
-                  className="absolute top-[0.12em] bottom-[0.12em] -left-px w-[2px] animate-pulse rounded-full motion-reduce:animate-none"
+                  className="absolute top-[0.12em] bottom-[0.12em] -left-px w-[2px] rounded-full"
                   style={{ backgroundColor: caretColor }}
                 />
                 {/* Probel ODDIY probel bo'lib qoladi.
@@ -235,8 +248,21 @@ function Sentence({ state, blocked }: { state: TypingState; blocked: BlockedKey 
           if (i < state.cursor) {
             // Yozib bo'lingan: xato qilingan joy sariq bo'lib qoladi —
             // gap oxirida qayerda qoqilgani ko'rinib tursin.
+            //
+            // Nuqtali tag chizig'i — rangdan TASHQARI signal: to'g'ri (#e6edf3)
+            // va xato (#f2b544) orasidagi yorug'lik ajralishi atigi 1.55:1,
+            // ya'ni farq deyarli faqat tusda. Rang ko'rmaydigan foydalanuvchi
+            // aks holda qayerda qoqilganini umuman ko'rmasdi. Monospace advance
+            // eni o'zgarmaydi, shuning uchun matn qayta joylashmaydi.
             return (
-              <span key={i} className={errors > 0 ? 'text-[#f2b544]' : 'text-[#e6edf3]'}>
+              <span
+                key={i}
+                className={
+                  errors > 0
+                    ? 'text-[#f2b544] underline decoration-dotted underline-offset-4'
+                    : 'text-[#e6edf3]'
+                }
+              >
                 {ch}
               </span>
             )
@@ -245,7 +271,7 @@ function Sentence({ state, blocked }: { state: TypingState; blocked: BlockedKey 
           // Hali yozilmagan. `Backspace` dan keyin kursor ORQAGA qaytishi mumkin,
           // shuning uchun oldinda ham xatosi bor pozitsiya uchraydi.
           return (
-            <span key={i} className={errors > 0 ? 'text-[#8a6a70]' : 'text-[#46566a]'}>
+            <span key={i} className={errors > 0 ? 'text-[#b08a90]' : 'text-[#7d8b9c]'}>
               {ch}
             </span>
           )
@@ -253,7 +279,7 @@ function Sentence({ state, blocked }: { state: TypingState; blocked: BlockedKey 
 
         {state.cursor >= chars.length ? (
           <span
-            className="ml-px inline-block h-[1em] w-[2px] animate-pulse rounded-full align-[-0.15em] motion-reduce:animate-none"
+            className="ml-px inline-block h-[1em] w-[2px] rounded-full align-[-0.15em]"
             style={{ backgroundColor: caretColor }}
           />
         ) : null}
@@ -269,10 +295,10 @@ function NotFound({ message }: { message: string }) {
     <div className="mx-auto w-full max-w-3xl">
       <div className={`${PANEL} p-8 text-center sm:p-12`}>
         <div className={LABEL}>dars ochilmadi</div>
-        <h1 className="mt-4 font-mono text-2xl font-semibold text-[#e6edf3]">
+        <h1 className="mt-4 font-mono text-[21px] font-semibold text-[#e6edf3]">
           Mashqni boshlab bo&apos;lmadi
         </h1>
-        <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-[#8b98a9]">{message}</p>
+        <p className="mx-auto mt-3 max-w-md text-[13px] leading-relaxed text-[#8b98a9]">{message}</p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <Link to="/" className={LINK_BTN_PRIMARY}>
             Darslar
@@ -295,21 +321,35 @@ function Session({ lesson }: { lesson: Lesson }) {
   const { state, blocked, awaitingNext } = session
   const expected = state.target[state.cursor]
 
+  // Ekran ochilishi bilan fokus mashq maydonida bo'lsin: usiz foydalanuvchi
+  // qayerga yozishni bilmaydi, fokus halqasi esa faqat bosilgandan keyin
+  // chiqadi. `preventScroll` SHART — usiz brauzer maydonni ko'rinishga tortib,
+  // sahifani sakratib yuboradi. Seans `key={lesson.id}` bilan kalitlangani
+  // uchun bu bir martalik effekt boshqa darsga o'tilganda ham qayta ishlaydi.
+  const fieldRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    fieldRef.current?.focus({ preventScroll: true })
+  }, [])
+
   return (
-    <div className="mx-auto w-full max-w-3xl">
+    // Tashqi o'ram `Layout` ning 896px ini oladi: `max-w-3xl` bu yerda turganda
+    // navigatsiyaning o'ng chekkasi mashq kontentidan 64px o'ngda qolardi.
+    // Tor o'qish ustuni faqat mashq matni panelida — u yerda ataylab qilingan
+    // ierarxiya signali, bu yerda esa tekislanmagan chekka edi.
+    <div className="w-full">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
           <div className={LABEL}>mashq</div>
-          <h1 className="mt-2 truncate font-mono text-lg font-semibold text-[#e6edf3] sm:text-xl">
+          <h1 className="mt-2 truncate font-mono text-[21px] font-semibold text-[#e6edf3]">
             {lesson.title === '' ? 'Nomsiz dars' : lesson.title}
           </h1>
-          <p className="mt-1.5 font-mono text-[11px] text-[#5c6b7d] tabular-nums">
+          <p className="mt-1.5 font-mono text-[11px] text-[#7d8b9c] tabular-nums">
             dars ichida {session.sentenceIndex + 1} / {lesson.sentences.length}-gap
           </p>
         </div>
         <Link
           to="/"
-          className="font-mono text-[11px] tracking-wide text-[#7d8b9c] underline decoration-white/20 underline-offset-4 transition-colors hover:text-[#e6edf3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#6ba8ff]"
+          className="inline-flex min-h-11 items-center font-mono text-[11px] text-[#7d8b9c] underline decoration-white/20 underline-offset-4 transition-colors duration-150 ease-out hover:text-[#e6edf3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ee6c1]"
         >
           Mashqni to&apos;xtatish
         </Link>
@@ -324,32 +364,39 @@ function Session({ lesson }: { lesson: Lesson }) {
             unit={`/ ${session.sessionTotal}`}
             color="#e6edf3"
           />
+          {/* HUD qiymatlari bir xil neytral rangda: uchta to'yingan rang mashq
+              matnidan diqqatni o'g'irlardi. Yagona istisno — qolgan vaqt seans
+              oxiriga yaqinlashganda: bu haqiqiy signal, bezak emas. */}
           <Stat
             label="net wpm"
             value={formatWpm(session.netWpm)}
             unit="so'z / daq"
-            color="#4fe0a8"
+            color="#e6edf3"
           />
-          <Stat label="aniqlik" value={formatPercent(session.accuracy)} color="#f2b544" />
-          <Stat label="qolgan vaqt" value={formatClock(session.remainingMs)} color="#6ba8ff" />
+          <Stat label="aniqlik" value={formatPercent(session.accuracy)} color="#e6edf3" />
+          <Stat
+            label="qolgan vaqt"
+            value={formatClock(session.remainingMs)}
+            color={session.timeProgress >= 0.9 ? '#ff6b6b' : '#e6edf3'}
+          />
         </div>
 
         <div className="mt-5 grid gap-3.5 sm:grid-cols-2">
           <div>
             <div className="flex items-baseline justify-between gap-2">
               <span className={LABEL}>gaplar</span>
-              <span className="font-mono text-[10.5px] text-[#5c6b7d] tabular-nums">
+              <span className="font-mono text-[11px] text-[#7d8b9c] tabular-nums">
                 {formatPercent(session.sentenceProgress)}
               </span>
             </div>
             <div className="mt-2">
-              <Bar value={session.sentenceProgress} color="#4fe0a8" />
+              <Bar value={session.sentenceProgress} color="#5ee6c1" />
             </div>
           </div>
           <div>
             <div className="flex items-baseline justify-between gap-2">
               <span className={LABEL}>vaqt</span>
-              <span className="font-mono text-[10.5px] text-[#5c6b7d] tabular-nums">
+              <span className="font-mono text-[11px] text-[#7d8b9c] tabular-nums">
                 {formatPercent(session.timeProgress)}
               </span>
             </div>
@@ -357,7 +404,7 @@ function Session({ lesson }: { lesson: Lesson }) {
               {/* Oxirgi o'ndan bir qismda rang qizaradi — seans tugashi yaqin. */}
               <Bar
                 value={session.timeProgress}
-                color={session.timeProgress >= 0.9 ? '#ff6b6b' : '#6ba8ff'}
+                color={session.timeProgress >= 0.9 ? '#ff6b6b' : '#7d8b9c'}
               />
             </div>
           </div>
@@ -374,33 +421,36 @@ function Session({ lesson }: { lesson: Lesson }) {
           `role`/`aria-label` esa ekran o'quvchisi uchun nomni beradi — nomsiz
           fokus nuqtasi "guruh" bo'lib o'qilardi. */}
       <section
+        ref={fieldRef}
         tabIndex={0}
         role="region"
         aria-label="Yozuv maydoni"
-        className={`${PANEL} mt-4 p-6 focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f14] focus-visible:outline-none sm:p-8`}
+        className={`${PANEL} mx-auto mt-4 max-w-3xl p-6 focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f14] focus-visible:outline-none sm:p-8`}
       >
         <Sentence state={state} blocked={blocked} />
       </section>
 
-      {/* Balandligi o'zgarmaydi — xabar almashganda ekran sakramasin. */}
-      <div role="status" aria-live="polite" className="mt-3 min-h-[54px]">
+      {/* Balandligi o'zgarmaydi — xabar almashganda ekran sakramasin. Tor
+          ekranda `blocked` xabari ikki-uch qatorga yoyilib ~92px ga chiqadi,
+          shuning uchun 54px faqat `sm` dan boshlab yetarli. */}
+      <div role="status" aria-live="polite" className="mt-3 min-h-23 sm:min-h-13.5">
         {awaitingNext ? (
-          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl border border-[#5ee6c1]/40 bg-[#5ee6c1]/[0.07] px-4 py-3">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-sm border border-[#5ee6c1]/40 bg-[#5ee6c1]/[0.07] px-4 py-3">
             <span
               aria-hidden="true"
               className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[#5ee6c1] motion-reduce:animate-none"
             />
-            <span className="font-mono text-[10px] tracking-[0.22em] text-[#5ee6c1] uppercase">
+            <span className="font-mono text-[11px] font-medium tracking-[0.22em] text-[#5ee6c1] uppercase">
               gap tugadi
             </span>
-            <span className="font-mono text-[12.5px] text-[#c6d3de]">
+            <span className="font-mono text-[13px] text-[#c6d3de]">
               Keyingi gapga o&apos;tish uchun <kbd className={KBD}>Enter</kbd> bosing.
             </span>
           </div>
         ) : blocked !== null ? (
           <BlockedHint key={blocked.nonce} blocked={blocked} expected={expected} />
         ) : (
-          <p className="px-1 py-3 font-mono text-[12.5px] text-[#5c6b7d]">
+          <p className="px-1 py-3 font-mono text-[13px] text-[#7d8b9c]">
             Eshitgan so&apos;zingizni yozing. Noto&apos;g&apos;ri belgida kursor joyida turadi.
           </p>
         )}
@@ -418,7 +468,9 @@ function Session({ lesson }: { lesson: Lesson }) {
               aria-hidden="true"
               className={[
                 'h-1.5 w-1.5 rounded-full',
-                session.audioEnabled ? 'bg-[#5ee6c1]' : 'bg-[#4a5768]',
+                // O'chiq holat 5.32:1 — oldingi so'niq kulrang fon sifatida
+                // atigi 2.61:1 edi, ya'ni WCAG 1.4.11 (3:1) dan past.
+                session.audioEnabled ? 'bg-[#5ee6c1]' : 'bg-[#7d8b9c]',
               ].join(' ')}
             />
             {session.audioEnabled ? 'Ovoz yoniq' : "Ovoz o'chiq"}
@@ -427,7 +479,7 @@ function Session({ lesson }: { lesson: Lesson }) {
           {/* Umumiy `ServerBanner` ulanish yo'qligini aytadi; bu belgi esa
               ayni damda QAYSI ovoz eshitilayotganini tugmaning yonida ko'rsatadi. */}
           {session.audioEnabled && !session.serverOk ? (
-            <span className="rounded-sm border border-[#3a2c12] bg-[#151007] px-2 py-1 font-mono text-[10.5px] text-[#e0cfa8]">
+            <span className="rounded-sm border border-[#3a2c12] bg-[#151007] px-2 py-1 font-mono text-[11px] text-[#e0cfa8]">
               zaxira: brauzer ovozi
             </span>
           ) : null}
@@ -443,7 +495,7 @@ function Session({ lesson }: { lesson: Lesson }) {
         </ul>
       </div>
 
-      <p className="mt-4 border-t border-white/[0.06] pt-4 font-mono text-[11px] leading-relaxed text-[#5c6b7d]">
+      <p className="mt-4 border-t border-[#1d2833] pt-4 font-mono text-[11px] leading-relaxed text-[#7d8b9c]">
         Seans {session.sessionTotal} ta gap yoki 10 daqiqa bilan cheklangan — qaysi biri
         oldin tugasa, natijalar ekrani ochiladi. Tashlangan gap (Esc) statistikaga kirmaydi,
         qayta boshlangan urinish (Tab) ham yozilmaydi.

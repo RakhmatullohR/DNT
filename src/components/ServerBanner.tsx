@@ -100,10 +100,10 @@ export function ServerBanner() {
             exhausted ? '' : 'animate-pulse',
           ].join(' ')}
         />
-        <span className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#f2b344]">
+        <span className="font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-[#f2b344]">
           ogohlantirish
         </span>
-        <p className="font-mono text-[12.5px] leading-snug text-[#e0cfa8]">
+        <p className="font-mono text-[13px] text-[#e0cfa8]">
           TTS server ulanmadi — brauzer ovozi (zaxira) ishlatiladi
         </p>
 
@@ -120,7 +120,7 @@ export function ServerBanner() {
               Qayta tekshirish
             </Button>
           ) : (
-            <span className="font-mono text-[11px] tracking-[0.06em] text-[#8a7c5b]">
+            <span className="font-mono text-[11px] text-[#8a7c5b]">
               qayta ulanish tekshirilmoqda...
             </span>
           )}

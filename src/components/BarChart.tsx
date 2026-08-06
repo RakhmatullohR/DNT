@@ -21,7 +21,7 @@ export type BarChartProps = {
   max?: number
 }
 
-const BAR = '#4fe0a8'
+const BAR = '#5ee6c1'
 
 /** Ichki koordinata tizimi: eni doim 100 (foizga teng), balandligi 40. */
 const VIEW_W = 100
@@ -146,7 +146,7 @@ export function BarChart({ data, max }: BarChartProps) {
         </svg>
 
         {n === 0 ? (
-          <span className="pointer-events-none absolute inset-0 flex items-center justify-center font-mono text-[10px] uppercase tracking-[0.2em] text-[#4a5768]">
+          <span className="pointer-events-none absolute inset-0 flex items-center justify-center font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-[#7d8b9c]">
             ma&apos;lumot yo&apos;q
           </span>
         ) : null}
@@ -154,7 +154,7 @@ export function BarChart({ data, max }: BarChartProps) {
 
       {n > 0 && dense ? (
         <div
-          className="mt-2 flex w-full items-baseline justify-between gap-2 font-mono text-[10px] tabular-nums text-[#5c6b7d]"
+          className="mt-2 flex w-full items-baseline justify-between gap-2 font-mono text-[11px] tabular-nums text-[#7d8b9c]"
           aria-hidden="true"
         >
           {sparseLabels.map((text, index) => (
@@ -170,7 +170,7 @@ export function BarChart({ data, max }: BarChartProps) {
           {rows.map((row, index) => (
             <span
               key={`label-${index}`}
-              className="min-w-0 flex-1 truncate px-0.5 text-center font-mono text-[10px] tabular-nums text-[#5c6b7d]"
+              className="min-w-0 flex-1 truncate px-0.5 text-center font-mono text-[11px] tabular-nums text-[#7d8b9c]"
             >
               {row.label}
             </span>

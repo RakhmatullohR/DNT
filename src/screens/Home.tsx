@@ -15,22 +15,22 @@ import type { Lesson } from '../store/lessons.ts'
 import { streakDays, totals } from '../store/stats.ts'
 
 const PANEL = 'rounded-2xl border border-white/[0.07] bg-[#0e141c]'
-const LABEL = 'font-mono text-[10px] uppercase tracking-[0.22em] text-[#7d8b9c]'
+const LABEL = 'font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-[#7d8b9c]'
 // Maydon uslubi `Import.tsx` dagi bilan bir xil: ikkala ekranda ham AYNAN shu
 // ikki ro'yxat tanlanadi, ko'rinishi ham farq qilmasligi kerak.
 const FIELD = [
   'w-full rounded-lg border border-white/[0.07] bg-[#0b1219] px-3 py-2.5',
-  'font-mono text-[13px] text-[#e6edf3] placeholder:text-[#4a5768]',
+  'font-mono text-[13px] text-[#e6edf3] placeholder:text-[#7d8b9c]',
   'transition-colors duration-150 ease-out hover:border-white/[0.12]',
-  'focus:border-[#4fe0a8]/40 focus:outline-none',
-  'focus-visible:ring-2 focus-visible:ring-[#5ee6c1]/40',
+  'focus:border-[#5ee6c1] focus:outline-none',
+  'focus-visible:ring-2 focus-visible:ring-[#5ee6c1]',
 ].join(' ')
 
 // Havola tugma ko'rinishida: `Button` — bu <button>, uni <a> ichiga solib
 // bo'lmaydi, shuning uchun navigatsiya uchun `Link` o'z sinflarini oladi.
 // Ko'rinish `Button.tsx` dagi `md` o'lchami bilan bir xil qilib olingan.
 const LINK_BTN =
-  'inline-flex h-10 items-center justify-center gap-2 rounded-sm border px-4 font-mono text-[13px] font-medium tracking-[0.04em] whitespace-nowrap transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f14]'
+  'inline-flex h-10 items-center justify-center gap-2 rounded-sm border px-4 font-mono text-[13px] font-medium whitespace-nowrap transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f14]'
 const LINK_PRIMARY = `${LINK_BTN} border-transparent bg-[#5ee6c1] text-[#04231c] hover:bg-[#7cf0d3]`
 
 // ---------------------------------------------------------------------------
@@ -145,7 +145,7 @@ function Stat({ label, value, accent = false }: { label: string; value: string; 
     <div>
       <dt className={LABEL}>{label}</dt>
       <dd
-        className={`mt-1.5 font-mono text-[17px] tabular-nums ${
+        className={`mt-1.5 font-mono text-[21px] font-semibold tabular-nums ${
           accent ? 'text-[#5ee6c1]' : 'text-[#e6edf3]'
         }`}
       >
@@ -221,7 +221,7 @@ function LessonCard({
   return (
     <li className={`${PANEL} p-5`}>
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-        <h2 className="min-w-0 truncate font-mono text-[15px] font-medium text-[#e6edf3]">
+        <h2 className="min-w-0 truncate font-mono text-[16px] font-medium text-[#e6edf3]">
           {title}
         </h2>
         <span className="shrink-0 font-mono text-[11px] tabular-nums text-[#7d8b9c]">
@@ -229,7 +229,7 @@ function LessonCard({
         </span>
       </div>
 
-      <p className="mt-1.5 font-mono text-[11px] tabular-nums text-[#5c6b7d]">
+      <p className="mt-1.5 font-mono text-[11px] tabular-nums text-[#7d8b9c]">
         {formatDate(lesson.createdAt)}
       </p>
 
@@ -240,7 +240,7 @@ function LessonCard({
             style={{ width: `${percent}%` }}
           />
         </div>
-        <p className="mt-2 font-mono text-[11px] text-[#5c6b7d]">{status}</p>
+        <p className="mt-2 font-mono text-[11px] text-[#7d8b9c]">{status}</p>
       </div>
 
       {/* Tugmalar qatori HAR DOIM turadi. Uni tasdiq paneli bilan almashtirish
@@ -331,7 +331,7 @@ function LessonCard({
               </select>
             </div>
           </div>
-          <p className="mt-3 font-mono text-[11px] leading-relaxed text-[#5c6b7d]">
+          <p className="mt-3 font-mono text-[11px] leading-relaxed text-[#7d8b9c]">
             O&apos;zgarish darhol saqlanadi. Audio fayl nomi ovoz va tezlikdan hosil
             bo&apos;lgani uchun tayyorlangan kesh bu darsga endi to&apos;g&apos;ri kelmaydi —
             so&apos;zlar keyingi mashqda qaytadan sintez qilinadi. Davom ettirish nuqtasi va
@@ -350,7 +350,7 @@ function LessonCard({
         >
           <p
             id={confirmTextId}
-            className="font-mono text-[12px] leading-relaxed text-[#ff9f9f]"
+            className="font-mono text-[13px] leading-relaxed text-[#ff9f9f]"
           >
             &laquo;{title}&raquo; o&apos;chirilsinmi? Matn ham, davom ettirish nuqtasi ham
             yo&apos;qoladi va qaytarib bo&apos;lmaydi — nusxa faqat shu brauzerda saqlanadi.
@@ -437,7 +437,7 @@ export function Home() {
           <span className={LABEL}>umumiy holat</span>
           <Link
             to="/stats"
-            className="font-mono text-[11px] tracking-wide text-[#7d8b9c] underline decoration-white/20 underline-offset-4 transition-colors hover:text-[#e6edf3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ee6c1]"
+            className="font-mono text-[11px] text-[#7d8b9c] underline decoration-white/20 underline-offset-4 transition-colors hover:text-[#e6edf3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ee6c1]"
           >
             Batafsil
           </Link>
@@ -468,7 +468,7 @@ export function Home() {
             darslar
           </h1>
           {lessons.length > 0 ? (
-            <Link to="/import" className="font-mono text-[11px] tracking-wide text-[#5ee6c1] underline decoration-[#5ee6c1]/30 underline-offset-4 transition-colors hover:decoration-[#5ee6c1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ee6c1]">
+            <Link to="/import" className="font-mono text-[11px] text-[#5ee6c1] underline decoration-[#5ee6c1]/30 underline-offset-4 transition-colors hover:decoration-[#5ee6c1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ee6c1]">
               + yangi matn
             </Link>
           ) : null}
@@ -503,7 +503,7 @@ export function Home() {
       </section>
 
       {lessons.length > 0 ? (
-        <p className="font-mono text-[11px] leading-relaxed text-[#4a5768]">
+        <p className="font-mono text-[11px] leading-relaxed text-[#7d8b9c]">
           Davom ettirish gap darajasida ishlaydi: yarim yozilgan gap saqlanmaydi, mashq doim
           gap boshidan tiklanadi.
         </p>

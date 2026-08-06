@@ -19,11 +19,11 @@ import type { SessionRecord } from '../store/stats.ts'
 import { Sparkline } from '../components/Sparkline.tsx'
 
 const PANEL = 'rounded-2xl border border-white/[0.07] bg-[#0e141c]'
-const LABEL = 'font-mono text-[10px] uppercase tracking-[0.22em] text-[#7d8b9c]'
+const LABEL = 'font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-[#7d8b9c]'
 const BTN_BASE =
-  'inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 font-mono text-[13px] font-semibold tracking-wide transition-colors focus-visible:outline-2 focus-visible:outline-offset-2'
-const BTN_PRIMARY = `${BTN_BASE} bg-[#4fe0a8] text-[#04150e] hover:bg-[#6cebbc] focus-visible:outline-[#4fe0a8]`
-const BTN_GHOST = `${BTN_BASE} border border-white/10 bg-white/[0.03] text-[#e6edf3] hover:border-white/20 hover:bg-white/[0.06] focus-visible:outline-[#6ba8ff]`
+  'inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 font-mono text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2'
+const BTN_PRIMARY = `${BTN_BASE} bg-[#5ee6c1] text-[#04231c] hover:bg-[#7cf0d3] focus-visible:outline-[#5ee6c1]`
+const BTN_GHOST = `${BTN_BASE} border border-white/10 bg-white/[0.03] text-[#e6edf3] hover:border-white/20 hover:bg-white/[0.06] focus-visible:outline-[#5ee6c1]`
 
 /** Ro'yxatdagi so'zlar soni — undan ortig'i ekranni ma'nosiz uzaytiradi. */
 const WORD_ROWS = 8
@@ -120,17 +120,17 @@ function Metric({
       <div className={LABEL}>{label}</div>
       <div className="mt-2.5 flex items-baseline gap-1.5">
         <span
-          className="font-mono text-3xl leading-none font-semibold tabular-nums sm:text-4xl"
+          className="font-mono text-[21px] leading-none font-semibold tabular-nums"
           style={{ color }}
         >
           {value}
         </span>
         {unit !== undefined ? (
-          <span className="font-mono text-[11px] tracking-wide text-[#5c6b7d]">{unit}</span>
+          <span className="font-mono text-[11px] text-[#7d8b9c]">{unit}</span>
         ) : null}
       </div>
       {hint !== undefined ? (
-        <div className="mt-2 font-mono text-[11px] text-[#5c6b7d]">{hint}</div>
+        <div className="mt-2 font-mono text-[11px] text-[#7d8b9c]">{hint}</div>
       ) : null}
     </div>
   )
@@ -144,10 +144,10 @@ function NotFound({ sessionId }: { sessionId: string }) {
       <Reveal>
         <div className={`${PANEL} p-8 text-center sm:p-12`}>
           <div className={LABEL}>seans topilmadi</div>
-          <h1 className="mt-4 font-mono text-2xl font-semibold text-[#e6edf3]">
+          <h1 className="mt-4 font-mono text-[21px] font-semibold text-[#e6edf3]">
             Bu seans yozuvi yo&apos;q
           </h1>
-          <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-[#8b98a9]">
+          <p className="mx-auto mt-3 max-w-md text-[13px] leading-relaxed text-[#8b98a9]">
             {sessionId === ''
               ? "Manzilda seans raqami ko'rsatilmagan."
               : "Yozuv o'chirilgan, brauzer xotirasi tozalangan yoki manzildagi raqam noto'g'ri bo'lishi mumkin."}{' '}
@@ -242,16 +242,16 @@ export function Results() {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-0">
             <div className={LABEL}>seans yakuni</div>
-            <h1 className="mt-2 truncate font-mono text-xl font-semibold text-[#e6edf3] sm:text-2xl">
+            <h1 className="mt-2 truncate font-mono text-[21px] font-semibold text-[#e6edf3]">
               {lessonTitle}
             </h1>
-            <p className="mt-1.5 font-mono text-[11px] text-[#5c6b7d]">
+            <p className="mt-1.5 font-mono text-[11px] text-[#7d8b9c]">
               {formatDateTime(session.startedAt > 0 ? session.startedAt : session.endedAt)}
             </p>
           </div>
           <Link
             to="/"
-            className="font-mono text-[11px] tracking-wide text-[#7d8b9c] underline decoration-white/20 underline-offset-4 transition-colors hover:text-[#e6edf3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#6ba8ff]"
+            className="font-mono text-[11px] text-[#7d8b9c] underline decoration-white/20 underline-offset-4 transition-colors hover:text-[#e6edf3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ee6c1]"
           >
             Bosh sahifa
           </Link>
@@ -265,10 +265,10 @@ export function Results() {
             <div>
               <div className={LABEL}>net wpm</div>
               <div className="mt-3 flex items-baseline gap-3">
-                <span className="font-mono text-6xl leading-none font-semibold tracking-tight text-[#4fe0a8] tabular-nums sm:text-7xl">
+                <span className="font-mono text-[60px] leading-none font-semibold tracking-tight text-[#5ee6c1] tabular-nums">
                   {formatWpm(session.netWpm)}
                 </span>
-                <span className="font-mono text-xs tracking-[0.2em] text-[#5c6b7d] uppercase">
+                <span className="font-mono text-[13px] font-medium tracking-[0.22em] text-[#7d8b9c] uppercase">
                   so&apos;z / daq
                 </span>
               </div>
@@ -280,23 +280,25 @@ export function Results() {
             <dl className="grid grid-cols-2 gap-x-8 gap-y-4 sm:text-right">
               <div>
                 <dt className={LABEL}>xatolar</dt>
-                <dd className="mt-1.5 font-mono text-lg text-[#ff6b6b] tabular-nums">
+                <dd className="mt-1.5 font-mono text-[16px] font-medium text-[#ff6b6b] tabular-nums">
                   {Math.max(0, Math.round(session.keystrokes - session.correctKeystrokes))}
                 </dd>
               </div>
               <div>
                 <dt className={LABEL}>qayta boshlash</dt>
-                <dd className="mt-1.5 font-mono text-lg text-[#e6edf3] tabular-nums">{restarts}</dd>
+                <dd className="mt-1.5 font-mono text-[16px] font-medium text-[#e6edf3] tabular-nums">
+                  {restarts}
+                </dd>
               </div>
               <div>
                 <dt className={LABEL}>bosishlar</dt>
-                <dd className="mt-1.5 font-mono text-lg text-[#e6edf3] tabular-nums">
+                <dd className="mt-1.5 font-mono text-[16px] font-medium text-[#e6edf3] tabular-nums">
                   {Math.round(session.keystrokes)}
                 </dd>
               </div>
               <div>
                 <dt className={LABEL}>tashlangan</dt>
-                <dd className="mt-1.5 font-mono text-lg text-[#e6edf3] tabular-nums">
+                <dd className="mt-1.5 font-mono text-[16px] font-medium text-[#e6edf3] tabular-nums">
                   {skippedCount}
                 </dd>
               </div>
@@ -310,7 +312,7 @@ export function Results() {
               width={480}
               height={84}
             />
-            <p className="mt-3 font-mono text-[11px] text-[#5c6b7d]">
+            <p className="mt-3 font-mono text-[11px] text-[#7d8b9c]">
               Har bir nuqta — bitta gap. Tashlangan gaplar (Escape) chizmaga kirmaydi.
             </p>
           </div>
@@ -352,13 +354,13 @@ export function Results() {
         <section className={`${PANEL} mt-4 p-6 sm:p-8`}>
           <div className="flex flex-wrap items-baseline justify-between gap-3">
             <h2 className={LABEL}>shu seansdagi qiyin so&apos;zlar</h2>
-            <span className="font-mono text-[10px] text-[#4a5768]">
+            <span className="font-mono text-[11px] text-[#7d8b9c]">
               xato / ta&apos;sirlanish
             </span>
           </div>
 
           {words.length === 0 ? (
-            <p className="mt-5 text-sm leading-relaxed text-[#7d8b9c]">
+            <p className="mt-5 text-[13px] leading-relaxed text-[#7d8b9c]">
               Bu seansdagi so&apos;zlarda qayd etilgan xato yo&apos;q — yoki dars
               o&apos;chirilgani uchun so&apos;zlar ro&apos;yxatini tiklab bo&apos;lmadi.
             </p>
@@ -366,7 +368,7 @@ export function Results() {
             <ul className="mt-5 space-y-2.5">
               {words.map((row) => (
                 <li key={row.word} className="flex items-center gap-3 sm:gap-4">
-                  <span className="w-28 shrink-0 truncate font-mono text-sm text-[#e6edf3] sm:w-40">
+                  <span className="w-28 shrink-0 truncate font-mono text-[13px] text-[#e6edf3] sm:w-40">
                     {row.word}
                   </span>
                   <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-white/[0.05]">
@@ -375,10 +377,10 @@ export function Results() {
                       style={{ width: `${Math.max(3, Math.min(100, row.rate * 100))}%` }}
                     />
                   </span>
-                  <span className="w-14 shrink-0 text-right font-mono text-xs text-[#ff8b8b] tabular-nums">
+                  <span className="w-14 shrink-0 text-right font-mono text-[13px] text-[#ff8b8b] tabular-nums">
                     {Math.round(row.rate * 100)}%
                   </span>
-                  <span className="hidden w-20 shrink-0 text-right font-mono text-[11px] text-[#5c6b7d] tabular-nums sm:block">
+                  <span className="hidden w-20 shrink-0 text-right font-mono text-[11px] text-[#7d8b9c] tabular-nums sm:block">
                     {row.errors}/{row.exposures}
                   </span>
                 </li>
@@ -386,7 +388,7 @@ export function Results() {
             </ul>
           )}
 
-          <p className="mt-5 border-t border-white/[0.06] pt-4 font-mono text-[11px] leading-relaxed text-[#5c6b7d]">
+          <p className="mt-5 border-t border-white/[0.06] pt-4 font-mono text-[11px] leading-relaxed text-[#7d8b9c]">
             Ro&apos;yxat shu seansda uchragan so&apos;zlardan tuzilgan, xato ulushi esa
             butun tarix bo&apos;yicha hisoblangan — so&apos;z xatolari seansga
             bog&apos;lanmagan holda saqlanadi.

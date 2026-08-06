@@ -185,7 +185,7 @@ function changeFromLabel(change: NormalizeChange): string {
 }
 
 const PANEL = 'rounded-lg border border-[#1d2833] bg-[#0d131a]'
-const CAPTION = "text-[10px] font-semibold uppercase tracking-[0.22em] text-[#5a6b7c]"
+const CAPTION = "text-[11px] font-medium uppercase tracking-[0.22em] text-[#7d8fa1]"
 
 type PaneProps = {
   caption: string
@@ -199,10 +199,10 @@ function Pane({ caption, hint, tone, children }: PaneProps): ReactElement {
     <div className={PANEL}>
       <div className="flex items-baseline justify-between gap-3 border-b border-[#1d2833] px-3 py-2">
         <span className={`${CAPTION} ${tone}`}>{caption}</span>
-        <span className="text-[10px] tabular-nums text-[#41505f]">{hint}</span>
+        <span className="text-[11px] tabular-nums text-[#7d8b9c]">{hint}</span>
       </div>
-      <div className="max-h-72 overflow-auto px-3 py-3 text-[13px] leading-[1.75] break-words whitespace-pre-wrap">
-        {children.length === 0 ? <span className="text-[#41505f]">— bo'sh —</span> : children}
+      <div className="max-h-72 overflow-auto px-3 py-3 text-[13px] leading-[1.8] break-words whitespace-pre-wrap">
+        {children.length === 0 ? <span className="text-[#7d8b9c]">— bo'sh —</span> : children}
       </div>
     </div>
   )
@@ -230,18 +230,18 @@ export function NormalizeDiff({ original, result }: NormalizeDiffProps): ReactEl
     <section aria-label="Normalizatsiya natijasi" className="space-y-4">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         {result.changes.length === 0 ? (
-          <p className="text-xs text-[#5ad1a5]">
+          <p className="text-[13px] text-[#5ad1a5]">
             Matn allaqachon toza — bironta ham belgi o'zgartirilmadi.
           </p>
         ) : (
           <>
-            <p className="text-xs text-[#8296a8]">
+            <p className="text-[13px] text-[#8b98a9]">
               <span className="tabular-nums text-[#e6edf3]">{totalChanges}</span> ta belgi
               o'zgartirildi:
             </p>
             <ul className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
               {kinds.map((kind) => (
-                <li key={kind} className="flex items-center gap-1.5 text-[11px] text-[#8296a8]">
+                <li key={kind} className="flex items-center gap-1.5 text-[11px] text-[#8b98a9]">
                   <span className={`h-2 w-2 rounded-[2px] ${KIND_META[kind].dot}`} aria-hidden="true" />
                   {KIND_META[kind].label}
                 </li>
@@ -252,7 +252,7 @@ export function NormalizeDiff({ original, result }: NormalizeDiffProps): ReactEl
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <Pane caption="Asl matn" hint={`${original.length} belgi`} tone="text-[#8296a8]">
+        <Pane caption="Asl matn" hint={`${original.length} belgi`} tone="text-[#8b98a9]">
           {renderSegments(left)}
         </Pane>
         <Pane
@@ -273,25 +273,25 @@ export function NormalizeDiff({ original, result }: NormalizeDiffProps): ReactEl
             {result.changes.map((change) => (
               <li
                 key={`${change.kind}|${change.from}|${change.to}`}
-                className="flex items-center gap-3 px-3 py-2 text-[12px]"
+                className="flex items-center gap-3 px-3 py-2 text-[13px]"
               >
                 <span
                   className={`h-2 w-2 shrink-0 rounded-[2px] ${KIND_META[change.kind].dot}`}
                   aria-hidden="true"
                 />
-                <span className="w-40 shrink-0 truncate text-[#8296a8]">
+                <span className="w-40 shrink-0 truncate text-[#8b98a9]">
                   {KIND_META[change.kind].label}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-[#e6edf3]">
                   {changeFromLabel(change)}
                 </span>
-                <span className="shrink-0 text-[#41505f]" aria-hidden="true">
+                <span className="shrink-0 text-[#7d8b9c]" aria-hidden="true">
                   &rarr;
                 </span>
                 <span className="w-24 shrink-0 truncate text-[#5ad1a5]">
                   {change.to === '' ? "o'chirildi" : `"${change.to}"`}
                 </span>
-                <span className="w-12 shrink-0 text-right tabular-nums text-[#5a6b7c]">
+                <span className="w-12 shrink-0 text-right tabular-nums text-[#7d8fa1]">
                   {change.count}&times;
                 </span>
               </li>
@@ -304,11 +304,11 @@ export function NormalizeDiff({ original, result }: NormalizeDiffProps): ReactEl
         <div className={`${PANEL} p-3`}>
           <div className="mb-2 flex items-baseline gap-2">
             <span className={CAPTION}>Olib tashlangan belgilar</span>
-            <span className="text-[10px] tabular-nums text-[#41505f]">
+            <span className="text-[11px] tabular-nums text-[#7d8b9c]">
               {result.removed.length} xil
             </span>
           </div>
-          <p className="mb-3 text-[11px] leading-relaxed text-[#5a6b7c]">
+          <p className="mb-3 text-[11px] leading-relaxed text-[#7d8fa1]">
             Bu belgilar klaviaturada terilmaydi, shuning uchun mashq matnidan chiqarildi. Ular
             bo'lmaganda kursor birinchi shunday belgida qotib qolardi va gap hech qachon
             tugamasdi.
@@ -320,7 +320,7 @@ export function NormalizeDiff({ original, result }: NormalizeDiffProps): ReactEl
                 className="flex items-center gap-2 rounded border border-[#ef6f6c]/30 bg-[#ef6f6c]/10 px-2 py-1 text-[11px]"
               >
                 <span className="text-[#ff9f9c]">{displayText(ch)}</span>
-                <span className="tabular-nums text-[#5a6b7c]">{codePointLabel(ch)}</span>
+                <span className="tabular-nums text-[#7d8fa1]">{codePointLabel(ch)}</span>
               </li>
             ))}
           </ul>
