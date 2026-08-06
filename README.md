@@ -48,7 +48,7 @@ yashirardi. Portni band qilib turgan nusxa bo'lsa: `PORT=8788 npm run dev:server
 | Skript | Nima qiladi |
 |---|---|
 | `npm run dev` | Server + web birga (yuqoriga qarang) |
-| `npm test` | `tsc --noEmit` + Vitest (`core` va `server` loyihalari alohida) |
+| `npm test` | `tsc --noEmit` + Vitest (`core`, `server`, `client` loyihalari alohida) |
 | `npm run typecheck` | Faqat tip tekshiruvi |
 | `npm run build` | Typecheck + Vite ishlab chiqarish qurilishi (`dist/`) |
 | `npm start` | Serverni ishlab chiqarish rejimida (`dist/` ni ham tarqatadi) |
@@ -160,12 +160,13 @@ so'zi doim yarim eshitilardi.
 ## Tuzilma
 
 ```
-shared/filename.ts   so'z -> fayl nomi. Server VA klient shu BITTA faylni import qiladi
-server/              Fastify: /api/tts/batch, /api/audio/:file, atomik yozish
+shared/              so'z -> fayl nomi, talaffuz tuzatishlari. Server VA klient shu nusxani import qiladi
+server/              Fastify: /api/tts/batch, /api/audio/:file, /api/health, atomik yozish
 src/core/            SOF MANTIQ — audio/DOM'siz, to'liq testlangan
 src/audio/           Web Audio: prefetch, trim, guard-navbat, fade
+src/hooks/           klaviatura -> reducer -> audio -> statistika ulanishi
 src/screens/         Home, Import, Practice, Results, Stats
-tests/               Vitest: core (node) + server (node)
+tests/               Vitest: core + server + client (hammasi node)
 ```
 
 Barcha nisbiy importlarda **`.ts` / `.tsx` kengaytmasi yoziladi** — klientda ham, serverda ham.

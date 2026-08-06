@@ -111,7 +111,7 @@ async function withTimeout<T>(work: Promise<T>, ms: number, word: string): Promi
 /**
  * Bitta so'zni sintez qiladi va MP3 buferini qaytaradi.
  *
- * `text` — SINTEZ matni (`overrides.json` almashtirgan shakl bo'lishi mumkin),
+ * `text` — SINTEZ matni (`shared/overrides.ts` almashtirgan shakl bo'lishi mumkin),
  * fayl nomi undan emas, asl imlodan olinadi — buni chaqiruvchi hal qiladi.
  *
  * Muvaffaqiyatsizlikda `MAX_RETRIES + 1` urinishdan keyin xato tashlanadi.
