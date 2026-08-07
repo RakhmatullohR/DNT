@@ -10,6 +10,27 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>dnt — eshit va yoz</title>
+    <!--
+      Shu qator borligi uchun Chrome manzil satrida "Ilovada ochish" tugmasini
+      chiqaradi: bosilganda ilova o'z oynasida (brauzer yorliqlarisiz) ochiladi
+      va tizim menyusiga ikonkasi bilan qo'shiladi.
+
+      Service worker ATAYIN yo'q va kerak emas — Chrome 149 da manifest va
+      ikonkalar (192 + 512) yetarli ekani tekshirilgan. Ilova localStorage dan
+      boshqa hech narsaga tayanmaydi, ya'ni offline kesh qatlami qo'shish
+      hech qanday yangi imkoniyat bermay, faqat yangilanish sikli muammosini
+      olib kelardi.
+
+      `manifest.webmanifest` va ikonkalar `public/` da: Vite ularni dev'da
+      ildizdan uzatadi va build vaqtida `dist/` ga ko'chiradi, ya'ni server
+      (`server/index.ts`) ham avtomatik xizmat qiladi.
+
+      DIQQAT: ilova QAYSI manzildan o'rnatilsa, doim o'shani ochadi
+      (`start_url: "/"` shu origin ichida). Darslar va statistika
+      `localStorage` da, u esa origin'ga bog'langan — ya'ni boshqa portdan
+      o'rnatilsa ilova bo'm-bo'sh ko'rinadi.
+    -->
+    <link rel="manifest" href="/manifest.webmanifest" />
   </head>
   <body>
     <div id="root"></div>
