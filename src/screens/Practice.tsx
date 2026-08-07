@@ -16,6 +16,8 @@ import type { KeyboardEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { Button } from '../components/Button.tsx'
+import type { EmphasisRange } from '../core/emphasis.ts'
+import { isEmphasized } from '../core/emphasis.ts'
 import type { TypingState } from '../core/types.ts'
 import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
 import type { BlockedKey } from '../hooks/useTypingSession.ts'
@@ -306,6 +308,18 @@ function BlockedHint({ blocked, expected }: { blocked: BlockedKey; expected: str
   )
 }
 
+/** `null` bo'laklarni tashlab sinf ro'yxatini yig'adi — shartli sinf uchun. */
+function classes(...tokens: (string | null)[]): string {
+  return tokens.filter((token): token is string => token !== null).join(' ')
+}
+
+/**
+ * Ta'kidlashsiz gaplar uchun BARQAROR bo'sh ro'yxat.
+ * Har renderda yangi `[]` yasalsa, `Sentence` ning propi har safar o'zgargan
+ * ko'rinardi — hozir memoizatsiya yo'q, lekin bu tuzoqni qoldirmagan ma'qul.
+ */
+const NO_EMPHASIS: readonly EmphasisRange[] = []
+
 /**
  * Gapni belgima-belgi chizadi.
  *
@@ -317,11 +331,14 @@ function BlockedHint({ blocked, expected }: { blocked: BlockedKey; expected: str
 function Sentence({
   state,
   blocked,
+  emphasis,
   sentenceNo,
   sentenceTotal,
 }: {
   state: TypingState
   blocked: BlockedKey | null
+  /** Import paytida `` `...` `` bilan belgilangan qalin oraliqlar (`core/emphasis.ts`). */
+  emphasis: readonly EmphasisRange[]
   sentenceNo: number
   sentenceTotal: number
 }) {
@@ -342,6 +359,12 @@ function Sentence({
         {chars.map((ch, i) => {
           const errors = state.charErrors.get(i) ?? 0
 
+          // Qalinlik YOZUV HOLATIDAN mustaqil: u matn muallifining belgisi, holat
+          // emas — shuning uchun uchala tarmoqda ham (yozilgan / kursor / yozilmagan)
+          // bir xil qo'llanadi va terish davomida o'zgarmaydi. Monospace shriftda
+          // qalin variantning advance eni bir xil, ya'ni matn qayta joylashmaydi.
+          const weight = isEmphasized(emphasis, i) ? 'font-bold' : null
+
           if (i === state.cursor) {
             // Fon ATAYIN yo'q: joriy belgini kursor chizig'ining o'zi ko'rsatadi.
             //
@@ -352,14 +375,15 @@ function Sentence({
             return (
               <span
                 key={i}
-                className={[
+                className={classes(
                   'relative',
+                  weight,
                   blocked !== null
                     ? 'text-[#ffc2c2]'
                     : errors > 0
                       ? 'text-[#b08a90]'
                       : 'text-[#7d8b9c]',
-                ].join(' ')}
+                )}
               >
                 {/* Kursor chizig'i alohida element: probel ustida ham ko'rinadi.
                     Yonib-o'chish ATAYIN yo'q: `animate-pulse` sikl davomida
@@ -399,11 +423,12 @@ function Sentence({
             return (
               <span
                 key={i}
-                className={
+                className={classes(
+                  weight,
                   errors > 0
                     ? 'text-[#f2b544] underline decoration-dotted underline-offset-4'
-                    : 'text-[#e6edf3]'
-                }
+                    : 'text-[#e6edf3]',
+                )}
               >
                 {ch}
               </span>
@@ -413,7 +438,10 @@ function Sentence({
           // Hali yozilmagan. `Backspace` dan keyin kursor ORQAGA qaytishi mumkin,
           // shuning uchun oldinda ham xatosi bor pozitsiya uchraydi.
           return (
-            <span key={i} className={errors > 0 ? 'text-[#b08a90]' : 'text-[#7d8b9c]'}>
+            <span
+              key={i}
+              className={classes(weight, errors > 0 ? 'text-[#b08a90]' : 'text-[#7d8b9c]')}
+            >
               {ch}
             </span>
           )
@@ -704,6 +732,7 @@ function Session({ lesson }: { lesson: Lesson }) {
       <Sentence
         state={state}
         blocked={blocked}
+        emphasis={lesson.emphasis?.[session.sentenceIndex] ?? NO_EMPHASIS}
         sentenceNo={session.sentenceIndex + 1}
         sentenceTotal={lesson.sentences.length}
       />
@@ -759,11 +788,11 @@ function Session({ lesson }: { lesson: Lesson }) {
         <p className="px-1 py-3 font-mono text-[13px] text-[#7d8b9c]">
           {/* Ilgari bu yerda "Eshitgan so'zingizni yozing" turardi — mexanikani
               TESKARI tushuntirardi: so'z eshitilgani uchun yozilmaydi, aksincha
-              birinchi harfi yozilgani uchun eshitiladi (`core/typing.ts`).
-              Matn qasddan qisqa: bu hudud balandligi mixlangan (yuqoriga
-              qarang) va uzun ko'rsatma ikkinchi qatorga tushib, xabar
-              almashganda ekranni sakratardi. */}
-          Har so&apos;zning birinchi harfini yozganda o&apos;sha so&apos;z bir marta
+              o'zidan oldingi belgi yozilgani uchun eshitiladi va shundan keyin
+              teriladi (`core/typing.ts`, `wordToPlay`). Matn qasddan qisqa: bu
+              hudud balandligi mixlangan (yuqoriga qarang) va uzun ko'rsatma
+              ikkinchi qatorga tushib, xabar almashganda ekranni sakratardi. */}
+          Har so&apos;z o&apos;zidan oldingi belgi yozilganda bir marta
           o&apos;qiladi. <kbd className={KBD}>Ctrl+Space</kbd> — qaytarish.
         </p>
       )}

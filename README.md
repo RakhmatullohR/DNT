@@ -4,9 +4,9 @@ Inglizcha **eshitish** va **tez yozish** mashqini bitta harakatga birlashtirgan 
 
 Asosiy mexanika:
 
-> Har bir so'zning **birinchi harfini** yozganingizda, o'sha so'z **to'liq o'qiladi** — va bir
-> urinish ichida **faqat bir marta**. Eshitgan so'zingizni qolgan harflarini yozish davomida
-> mustahkamlaysiz.
+> Har bir so'z **o'zidan oldingi belgi** (odatda probel, ba'zan tirnoq yoki qavs) yozilganda
+> **to'liq o'qiladi** — va bir urinish ichida **faqat bir marta**. Gapning birinchi so'zi esa
+> o'z **birinchi harfida** o'qiladi. Shunday qilib so'zni eshitasiz va shundan keyin yozasiz.
 
 To'liq matn ko'rinib turadi — bu yashirin dictation emas. Mashq qilinadigan narsa
 **imlo ↔ talaffuz bog'lanishi**: o'zbek tilida imlo deyarli fonematik, ingliz tilida esa yo'q.

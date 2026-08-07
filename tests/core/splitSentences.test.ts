@@ -141,6 +141,92 @@ describe('splitSentences', () => {
     ])
   })
 
+  // --- Qo'lda guruhlash: `[...]` (PLAN §2b) ---
+
+  it("`[...]` ichidagi ikki gap bitta birlik bo'lib qoladi, qavslar tushadi", () => {
+    expect(splitSentences('[He knocked. Nobody answered.] She left.')).toEqual([
+      'He knocked. Nobody answered.',
+      'She left.',
+    ])
+  })
+
+  it("guruh matn o'rtasida ham ishlaydi", () => {
+    expect(splitSentences('Zero. [One. Two. Three.] Four.')).toEqual([
+      'Zero.',
+      'One. Two. Three.',
+      'Four.',
+    ])
+  })
+
+  it('guruh ichidagi qisqartma birlashtirish ham buzilmaydi', () => {
+    expect(splitSentences('[Dr. Smith met Mr. Jones. They left.] We stayed.')).toEqual([
+      'Dr. Smith met Mr. Jones. They left.',
+      'We stayed.',
+    ])
+  })
+
+  it("bitta gapli guruhdan faqat qavslar olib tashlanadi", () => {
+    expect(splitSentences('[Only one sentence.]')).toEqual(['Only one sentence.'])
+  })
+
+  it("ketma-ket ikki guruh aralashib ketmaydi", () => {
+    expect(splitSentences('[One. Two.] [Three. Four.]')).toEqual([
+      'One. Two.',
+      'Three. Four.',
+    ])
+  })
+
+  it("qavs ichidagi ortiqcha probel guruhdan keyin ham qolmaydi", () => {
+    expect(splitSentences('[ One.   Two. ]')).toEqual(['One. Two.'])
+  })
+
+  it("bo'sh guruh natijaga tushmaydi", () => {
+    expect(splitSentences('[]')).toEqual([])
+  })
+
+  // `[] Next.` bitta segment bo'lib chiqadi va `]` uning oxirida emas — demak
+  // guruh emas. Qavslar ko'rinib qoladi, muallif ularni o'zi olib tashlaydi.
+  it("gap boshidagi bo'sh qavs guruh emas", () => {
+    expect(splitSentences('[] Next.')).toEqual(['[] Next.'])
+  })
+
+  // Guruh butun gaplarni qamrashi kerak: `]` gap OXIRIDA emas -> guruh emas.
+  it("gap ichidagi `[sic]` guruh deb hisoblanmaydi", () => {
+    expect(splitSentences('He said [sic] loudly. Next.')).toEqual([
+      'He said [sic] loudly.',
+      'Next.',
+    ])
+  })
+
+  it("gap `[sic]` bilan boshlansa ham qavslar tegilmaydi", () => {
+    expect(splitSentences('[sic] he said. Next.')).toEqual(['[sic] he said.', 'Next.'])
+  })
+
+  it("qavsdan keyin dum qolsa guruh birlashtirilmaydi", () => {
+    expect(splitSentences('[One. Two.] and more. Next.')).toEqual([
+      '[One.',
+      'Two.] and more.',
+      'Next.',
+    ])
+  })
+
+  it("yopilmagan `[` qolgan gaplarni yutib yubormaydi", () => {
+    expect(splitSentences('Zero. [One. Two. Three.')).toEqual([
+      'Zero.',
+      '[One.',
+      'Two.',
+      'Three.',
+    ])
+  })
+
+  it("ortiqcha `]` guruh sifatida qabul qilinmaydi", () => {
+    expect(splitSentences('[One. Two.]] Next.')).toEqual(['[One.', 'Two.]]', 'Next.'])
+  })
+
+  it("ichma-ich qavsda faqat tashqi juft olib tashlanadi", () => {
+    expect(splitSentences('[A. [B. C.] D.] E.')).toEqual(['A. [B. C.] D.', 'E.'])
+  })
+
   it('ABBREVIATIONS PLAN §2b dagi ro\'yxatga mos', () => {
     expect(ABBREVIATIONS).toEqual([
       'Mr.',

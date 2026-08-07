@@ -7,6 +7,10 @@
 // Rejim — `block` (PLAN §4): noto'g'ri belgida kursor SILJIMAYDI. `forgiving`
 // v1 ga kiritilmagan, chunki unda kursor so'z boshidan noto'g'ri harf bilan
 // o'tib ketardi va o'sha so'z ovozi hech qachon chiqmasdi.
+//
+// Ovoz vaqti — `wordToPlay`: har so'z o'zidan OLDINGI belgi terilganda o'qiladi
+// (gapning birinchi so'zi esa o'z birinchi harfida). Ya'ni foydalanuvchi so'zni
+// yozishni boshlashidan oldin eshitadi.
 
 import type { Effect, Token, TypingEvent, TypingState } from './types.ts'
 import { IDLE_PAUSE_MS } from './types.ts'
@@ -94,10 +98,8 @@ function reduceChar(s: TypingState, char: string, now: number): ReduceResult {
   const effects: Effect[] = []
   const cursor = s.cursor + 1
 
-  // ⭐ Qoida `token.start` ga tayanadi, `cursor === 0` ga EMAS: `"The cat`
-  // holatida birinchi so'z 1-indeksdan boshlanadi (PLAN §4).
   let pendingWords = s.pendingWords
-  const wordIndex = wordTokenStartingAt(s.tokens, s.cursor)
+  const wordIndex = wordToPlay(s.tokens, s.cursor, cursor)
   if (wordIndex !== -1 && !s.playedWords.has(wordIndex) && !s.pendingWords.has(wordIndex)) {
     pendingWords = new Set(s.pendingWords)
     pendingWords.add(wordIndex)
@@ -204,9 +206,47 @@ function advanceClock(s: TypingState, now: number): Clock {
 }
 
 /**
- * Aynan `pos` dan boshlanadigan `word` tokeni indeksi, topilmasa `-1`.
- * Ovoz shu tekshiruv orqali chiqadi — so'zning BIRINCHI harfida.
+ * ⭐ Shu bosishda o'qilishi kerak bo'lgan `word` token indeksi; bo'lmasa `-1`.
+ * `before` — bosishdan OLDINGI kursor, `after` — undan keyingisi.
+ *
+ * Qoida (PLAN §4): ovoz so'zdan BIR BOSISH OLDIN chiqadi — so'zdan oldingi belgi
+ * terilganda o'sha so'z o'qiladi. Odatda bu probel, lekin tirnoq va qavs ham
+ * shunday ishlaydi: qoida "probel" ga emas, "so'zning oldidagi belgi" ga tayanadi.
+ * Aks holda `He said "hello"` dagi `hello` boshqa so'zlardan kechroq eshitilib,
+ * ritm buzilardi. Maqsad — foydalanuvchi so'zni TERISHDAN OLDIN eshitsin.
+ *
+ * Yagona istisno — gapning BIRINCHI so'zi: u o'z birinchi harfida o'qiladi.
+ * Undan oldin belgi umuman bo'lmasligi mumkin, `"The cat` dagi `"` esa gap
+ * boshidagi bezak — uni "ogohlantirish bosishi" deb hisoblash birinchi so'zni
+ * gap ochilishidayoq, foydalanuvchi hali yozishga tayyorlanmasdan o'qib yuborardi.
+ *
+ * Ikki tarmoq bir vaqtda ishlay olmaydi: `tokenize` ikki `word` tokenini yonma-yon
+ * qo'ymaydi (yondosh harflar bitta so'zga birikadi), ya'ni `before` va `after`
+ * bir vaqtda so'z boshi bo'lolmaydi.
  */
+function wordToPlay(tokens: Token[], before: number, after: number): number {
+  const first = firstWordIndex(tokens)
+  if (first === -1) return -1
+
+  // 1) Gapning birinchi so'zi — eski qoida: o'z birinchi harfida.
+  if (wordTokenStartingAt(tokens, before) === first) return first
+
+  // 2) Qolganlari — o'zidan oldingi belgi terilganda.
+  const next = wordTokenStartingAt(tokens, after)
+  return next === first ? -1 : next
+}
+
+/** Gapdagi birinchi `word` token indeksi; gapda so'z bo'lmasa `-1`. */
+function firstWordIndex(tokens: Token[]): number {
+  for (let i = 0; i < tokens.length; i += 1) {
+    const t = tokens[i]
+    if (t === undefined) continue
+    if (t.kind === 'word') return i
+  }
+  return -1
+}
+
+/** Aynan `pos` dan boshlanadigan `word` tokeni indeksi, topilmasa `-1`. */
 function wordTokenStartingAt(tokens: Token[], pos: number): number {
   for (let i = 0; i < tokens.length; i += 1) {
     const t = tokens[i]

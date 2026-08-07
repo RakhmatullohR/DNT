@@ -10,15 +10,20 @@
 //   "First line\nsecond line."
 //     -> ["First line\n", "second line."]             <- \n segment ICHIDA
 //
-// Shuning uchun uch qadam bajariladi:
+// Shuning uchun to'rt qadam bajariladi:
 //   1) `Intl.Segmenter` bilan bo'linadi,
 //   2) qisqartma bilan tugagan segment keyingisi bilan QO'SHILADI
 //      (ketma-ket bir nechta qisqartma ham to'g'ri ishlashi uchun tsikl ichida),
-//   3) har segment `\s+ -> ' '` va `trim()` bilan tozalanadi, bo'shlari tashlanadi.
+//   3) har segment `\s+ -> ' '` va `trim()` bilan tozalanadi, bo'shlari tashlanadi,
+//   4) `[...]` ichidagi gaplar BITTA birlikka birlashtiriladi, qavslar olib tashlanadi.
 //
 // 3-qadam shart: oxiridagi ko'rinmas probel qolsa, gap ko'zga tugagandek
 // ko'rinadi, lekin `finished` ishlamaydi va foydalanuvchidan yo'q joyga
 // probel bosish talab qilinadi.
+//
+// 4-qadam qo'lda guruhlash uchun: ba'zi gaplar bir-birini to'ldiradi va alohida
+// mashq qilinsa ma'nosi yo'qoladi. Avtomatik bo'luvchi buni bila olmaydi, shuning
+// uchun qaror MATN MUALLIFIDA qoldirilgan — u guruhni `[` va `]` bilan belgilaydi.
 
 /**
  * Nuqta bilan tugasa ham gapni TUGATMAYDIGAN qisqartmalar.
@@ -62,10 +67,91 @@ function endsWithAbbreviation(trimmed: string): boolean {
   return false
 }
 
+const GROUP_OPEN = '['
+const GROUP_CLOSE = ']'
+
+/** Bo'lakdagi qavslar balansi: `[` uchun +1, `]` uchun -1. */
+function bracketDelta(text: string): number {
+  let delta = 0
+  for (const ch of text) {
+    if (ch === GROUP_OPEN) delta += 1
+    else if (ch === GROUP_CLOSE) delta -= 1
+  }
+  return delta
+}
+
+/**
+ * Birinchi `[` va uni YOPADIGAN `]` ni olib tashlaydi; ichkaridagi qavslar
+ * tegilmaydi. Ichki qavs — matn muallifining xatosi, uni jimgina yeb qo'yishdan
+ * ko'ra gaplar ro'yxatida ko'rinib turgani yaxshi.
+ */
+function stripOuterBrackets(text: string): string {
+  let depth = 0
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text.charAt(i)
+    if (ch === GROUP_OPEN) {
+      depth += 1
+      continue
+    }
+    if (ch !== GROUP_CLOSE) continue
+    depth -= 1
+    if (depth === 0) return `${text.slice(1, i)}${text.slice(i + 1)}`
+  }
+  return text
+}
+
+/**
+ * 4-qadam: `[` bilan BOSHLANIB `]` bilan TUGAGAN gaplar ketma-ketligini bitta
+ * birlikka yig'adi va tashqi qavs juftini olib tashlaydi.
+ *
+ * Ikkala shart ham qat'iy — guruh butun gaplarni qamrashi kerak. Faqat
+ * "`[` bilan boshlanadi" deb qarasak, `[sic] he said.` guruh deb hisoblanib,
+ * qavslar matn ichidan olib tashlanardi. Faqat balansga qarasak esa
+ * `[One. Two.] and more.` da qavsdan keyingi dum ham guruhga qo'shilib ketardi.
+ * Shart bajarilmasa gaplar TEGILMAYDI: qavs matnda ko'rinib qoladi va muallif
+ * uni o'zi tuzatadi — jimgina noto'g'ri birlashtirishdan ko'ra shu ma'qul.
+ */
+function mergeGroups(sentences: readonly string[]): string[] {
+  const merged: string[] = []
+  /** Ochilgan, lekin hali yopilmagan guruh bo'laklari. */
+  let pending: string[] = []
+  let depth = 0
+
+  for (const sentence of sentences) {
+    if (depth === 0 && !sentence.startsWith(GROUP_OPEN)) {
+      merged.push(sentence)
+      continue
+    }
+    pending.push(sentence)
+    depth += bracketDelta(sentence)
+    if (depth > 0) continue
+
+    if (depth === 0 && sentence.endsWith(GROUP_CLOSE)) {
+      // Qavslar olib tashlangach `[ One.` -> ` One.` bo'lib, bosh probel qolishi
+      // mumkin — 3-qadamdagi tozalash shu sababli TAKRORLANADI.
+      const clean = stripOuterBrackets(pending.join(' ')).replace(/\s+/g, ' ').trim()
+      if (clean !== '') merged.push(clean)
+    } else {
+      // Balans manfiyga ketdi (`[A.]]`) yoki `]` gap oxirida emas — guruh emas.
+      for (const part of pending) merged.push(part)
+    }
+    pending = []
+    depth = 0
+  }
+
+  // Yopilmagan `[`: qolgan gaplar birlashtirilmaydi, aks holda bitta tasodifiy
+  // qavs butun darsni bitta ulkan gapga aylantirib qo'yardi.
+  for (const part of pending) merged.push(part)
+  return merged
+}
+
 /**
  * Matnni gaplarga bo'ladi.
  * Qaytgan har bir gapda bo'shliqlar bittaga siqilgan, bosh/oxirgi probel yo'q,
  * `\n` va `\t` oddiy probelga aylangan. Bo'sh matn -> bo'sh massiv.
+ *
+ * `[` bilan boshlanib `]` bilan tugagan bo'lak — nechta gapdan iborat bo'lsa ham —
+ * BITTA gap sifatida qaytadi, qavslarsiz.
  */
 export function splitSentences(text: string): string[] {
   if (text.length === 0) return []
@@ -97,5 +183,7 @@ export function splitSentences(text: string): string[] {
     const clean = sentence.replace(/\s+/g, ' ').trim()
     if (clean !== '') sentences.push(clean)
   }
-  return sentences
+
+  // 4-qadam: qo'lda guruhlash.
+  return mergeGroups(sentences)
 }

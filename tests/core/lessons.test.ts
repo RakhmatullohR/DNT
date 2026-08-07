@@ -400,6 +400,179 @@ describe("saqlangan `skipped` ro'yxatini o'qish", () => {
 })
 
 // ---------------------------------------------------------------------------
+// Ta'kidlash oraliqlari (`emphasis`) — ishonchsiz `localStorage` ma'lumoti
+// ---------------------------------------------------------------------------
+
+describe("saqlangan `emphasis` oraliqlarini o'qish", () => {
+  it('yozilgan oraliqlar aynan qaytadi', () => {
+    // `sentences[0]` = 'The cat sat.' (12 belgi), `sentences[1]` = 'The dog ran.'
+    saveLesson(makeLesson({ emphasis: [[{ start: 4, end: 7 }], []] }))
+    expect(getLesson('l-1')?.emphasis).toEqual([[{ start: 4, end: 7 }], []])
+  })
+
+  it("maydoni yo'q ESKI dars `undefined` bilan qaytadi — qalinlik yo'q", () => {
+    writeRaw([{ id: 'eski', sentences: ['Bir.'], normalizedText: 'Bir.' }])
+    expect(getLesson('eski')?.emphasis).toBeUndefined()
+  })
+
+  it("massiv bo'lmagan qiymat `undefined` ga aylanadi", () => {
+    writeRaw([{ ...makeLesson(), emphasis: 'qalin' }])
+    expect(getLesson('l-1')?.emphasis).toBeUndefined()
+  })
+
+  it("birorta oraliq qolmasa maydon SAQLANMAYDI", () => {
+    saveLesson(makeLesson({ emphasis: [[], []] }))
+    expect(getLesson('l-1')?.emphasis).toBeUndefined()
+    // Bo'sh ro'yxatlar diskka ham yozilmaydi — 500 gapli darsda ular bekorga joy egallardi.
+    expect(localStorage.getItem(LESSONS_KEY)).not.toContain('emphasis')
+  })
+
+  it('gap CHEGARASIDAN chiqqan oraliq tashlanadi, dars esa yo\'qolmaydi', () => {
+    // 'The cat sat.' — 12 belgi, ya'ni `end: 99` yaroqsiz.
+    writeRaw([makeLesson({ emphasis: [[{ start: 0, end: 99 }], []] })])
+
+    const lesson = getLesson('l-1')
+    expect(lesson).not.toBeNull()
+    expect(lesson?.sentences).toEqual(['The cat sat.', 'The dog ran.'])
+    expect(lesson?.emphasis).toBeUndefined()
+  })
+
+  it('buzuq oraliqlar tozalanadi, yaroqlisi qoladi', () => {
+    writeRaw([
+      makeLesson({
+        emphasis: [
+          [
+            { start: -1, end: 3 }, // manfiy boshlanish
+            { start: 5, end: 5 }, // bo'sh
+            { start: 7, end: 4 }, // teskari
+            { start: 0, end: 3 }, // YAROQLI
+            'oraliq emas',
+            null,
+          ] as never,
+          [],
+        ],
+      }),
+    ])
+    expect(getLesson('l-1')?.emphasis).toEqual([[{ start: 0, end: 3 }], []])
+  })
+
+  it("kesishgan oraliq butunlay tashlanadi (chizuvchi kesishmaganiga tayanadi)", () => {
+    writeRaw([makeLesson({ emphasis: [[{ start: 0, end: 7 }, { start: 4, end: 9 }], []] })])
+    expect(getLesson('l-1')?.emphasis).toEqual([[{ start: 0, end: 7 }], []])
+  })
+
+  it("oraliqlar o'sish tartibiga keltiriladi", () => {
+    writeRaw([makeLesson({ emphasis: [[{ start: 8, end: 11 }, { start: 0, end: 3 }], []] })])
+    expect(getLesson('l-1')?.emphasis).toEqual([
+      [
+        { start: 0, end: 3 },
+        { start: 8, end: 11 },
+      ],
+      [],
+    ])
+  })
+
+  it("ro'yxat uzunligi gaplar soniga tenglashtiriladi", () => {
+    // Bitta gapga oraliq berilgan, ikkinchisiga umuman yo'q.
+    writeRaw([makeLesson({ emphasis: [[{ start: 0, end: 3 }]] })])
+    expect(getLesson('l-1')?.emphasis).toHaveLength(2)
+  })
+
+  it("`saveLesson` ham normallashtiradi", () => {
+    saveLesson(makeLesson({ emphasis: [[{ start: 4, end: 999 }], [{ start: 0, end: 3 }]] }))
+    expect(getLesson('l-1')?.emphasis).toEqual([[], [{ start: 0, end: 3 }]])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ESKI darslarni ko'chirish: belgilar hali gap matnining ichida (PLAN §2b')
+// ---------------------------------------------------------------------------
+
+describe("ta'kidlash qo'shilishidan OLDIN saqlangan darslar", () => {
+  it("gap ichida qolgan `` `...` `` o'qishda ajratiladi", () => {
+    writeRaw([
+      {
+        id: 'eski',
+        sentences: ['Hundreds of people `packed into` the hall.'],
+        normalizedText: 'Hundreds of people `packed into` the hall.',
+      },
+    ])
+
+    const lesson = getLesson('eski')
+    // Target endi teskari tirnoqsiz — foydalanuvchi uni termaydi.
+    expect(lesson?.sentences).toEqual(['Hundreds of people packed into the hall.'])
+    expect(lesson?.emphasis).toEqual([[{ start: 19, end: 30 }]])
+
+    const text = lesson?.sentences[0] ?? ''
+    const range = lesson?.emphasis?.[0]?.[0]
+    expect(text.slice(range?.start ?? 0, range?.end ?? 0)).toBe('packed into')
+  })
+
+  it("belgisi yo'q eski dars UMUMAN o'zgarmaydi", () => {
+    writeRaw([{ id: 'eski', sentences: ['The cat sat.'], normalizedText: 'The cat sat.' }])
+
+    const lesson = getLesson('eski')
+    expect(lesson?.sentences).toEqual(['The cat sat.'])
+    expect(lesson?.emphasis).toBeUndefined()
+  })
+
+  it("yolg'iz tirnoq ko'chirishda ham TEGILMAY qoladi", () => {
+    writeRaw([{ id: 'eski', sentences: ['A `b c.'], normalizedText: 'A `b c.' }])
+    expect(getLesson('eski')?.sentences).toEqual(['A `b c.'])
+    expect(getLesson('eski')?.emphasis).toBeUndefined()
+  })
+
+  it("`emphasis` maydoni BOR dars ko'chirilmaydi", () => {
+    // Yangi kod saqlagan dars: juftlangan belgilar allaqachon olingan, qolgan
+    // yolg'iz tirnoq esa ataylab matnda. Uni ikkinchi marta talqin qilmaymiz.
+    writeRaw([
+      {
+        id: 'yangi',
+        sentences: ['A `b c.', 'D e.'],
+        normalizedText: 'A `b c. D e.',
+        emphasis: [[], [{ start: 0, end: 1 }]],
+      },
+    ])
+
+    const lesson = getLesson('yangi')
+    expect(lesson?.sentences).toEqual(['A `b c.', 'D e.'])
+    expect(lesson?.emphasis).toEqual([[], [{ start: 0, end: 1 }]])
+  })
+
+  it("ko'chirish gaplar SONINI o'zgartirmaydi — progress ma'nosi saqlanadi", () => {
+    writeRaw([
+      {
+        id: 'eski',
+        sentences: ['`One` two.', 'Three `four`.', 'Five.'],
+        normalizedText: '`One` two. Three `four`. Five.',
+        progress: 2,
+        skipped: [1],
+      },
+    ])
+
+    const lesson = getLesson('eski')
+    expect(lesson?.sentences).toEqual(['One two.', 'Three four.', 'Five.'])
+    expect(lesson?.progress).toBe(2)
+    expect(lesson?.skipped).toEqual([1])
+  })
+
+  it("ko'chirish idempotent: ikkinchi o'qish natijani o'zgartirmaydi", () => {
+    writeRaw([
+      { id: 'eski', sentences: ['A `b` c.'], normalizedText: 'A `b` c.' },
+    ])
+
+    const first = getLesson('eski')
+    // Progress yozuvi ko'chirilgan shaklni diskka qaytaradi.
+    setProgress('eski', 1)
+    const second = getLesson('eski')
+
+    expect(second?.sentences).toEqual(first?.sentences)
+    expect(second?.emphasis).toEqual(first?.emphasis)
+    expect(second?.sentences).toEqual(['A b c.'])
+  })
+})
+
+// ---------------------------------------------------------------------------
 // O'chirish
 // ---------------------------------------------------------------------------
 

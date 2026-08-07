@@ -20,7 +20,7 @@
 | M4 — statistika va eksport | BAJARILDI | `stats.ts`, `Results`, `Stats`, JSON eksport/import |
 | M5 — sayqal | BAJARILDI | yorliqlar, bo'sh holatlar, dars bo'yicha ovoz va tezlik |
 
-`npm test` yashil: `tsc --noEmit` toza, 15 fayl / 459 test. `npm run build` o'tadi.
+`npm test` yashil: `tsc --noEmit` toza, 16 fayl / 568 test. `npm run build` o'tadi.
 
 **Bu hujjat endi qurilish rejasi emas — qaror registri.** Quyidagi hamma narsa hozirgi
 zamonda yozilgan va kodda mavjud. Yagona istisno `> ⚠ Bajarilmagan:` bilan belgilangan
@@ -41,7 +41,7 @@ bo'lsa, sabab shu yerda, tartib esa README da qoladi.
 Maqsad: inglizcha eshitish va tez yozish mashqini **bitta harakatga** birlashtirgan shaxsiy web-ilova.
 
 Asosiy mexanika:
-> Har bir so'zning **birinchi harfini** yozganda, o'sha so'z **to'liq o'qiladi** — va bir urinish ichida **faqat bir marta**. Foydalanuvchi eshitgan so'zini qolgan harflarini yozish davomida mustahkamlaydi.
+> Har bir so'z **o'zidan oldingi belgi** terilganda (odatda probel; tirnoq yoki qavs ham bo'lishi mumkin) **to'liq o'qiladi** — va bir urinish ichida **faqat bir marta**. Yagona istisno — gapning **birinchi so'zi**: u o'z birinchi harfida o'qiladi, chunki undan oldin bosiladigan belgi bo'lmasligi mumkin. Maqsad: foydalanuvchi so'zni **terishdan oldin** eshitsin va yozayotganda mustahkamlasin.
 
 Tanlangan qarorlar:
 - **To'liq matn ko'rinib turadi.** Yashirin dictation emas.
@@ -213,6 +213,70 @@ shart. Usiz `revs.` `vs.` deb o'qilib, keyingi gap bilan noto'g'ri birlashardi.
 
 3-qadam trailing probel muammosini hal qiladi: usiz gap ko'zga tugagandek ko'rinadi, lekin `finished` ishlamaydi va ko'rinmas joyda probel bosish talab qilinadi.
 
+**4-qadam — qo'lda guruhlash `[...]`.** Ba'zi gaplar bir-birini to'ldiradi: alohida
+mashq birligiga ajratilsa mazmuni yo'qoladi. Buni avtomatik bo'luvchi bila olmaydi,
+shuning uchun qaror **matn muallifiga** berilgan — u guruhni `[` va `]` bilan
+belgilaydi va ichidagi gaplar nechta bo'lsa ham bitta birlik bo'lib qoladi.
+Qavslarning o'zi targetdan **olib tashlanadi**: ular belgi, kontent emas — aks holda
+foydalanuvchi mashq paytida `[` ni terishga majbur bo'lardi (§2a bilan bir mantiq).
+
+Guruh **butun gaplarni** qamrashi shart: `[` gap boshida, `]` gap oxirida. Ikkala shart
+ham kerak, chunki:
+
+| Kirish | Sabab | Natija |
+|---|---|---|
+| `He said [sic] loudly.` | `[` gap boshida emas | tegilmaydi |
+| `[sic] he said.` | `]` gap oxirida emas | tegilmaydi |
+| `[One. Two.] and more.` | `]` dan keyin dum bor | tegilmaydi |
+| `Zero. [One. Two.` | `[` yopilmagan | tegilmaydi |
+
+Shart bajarilmasa gaplar **birlashtirilmaydi va qavslar matnda ko'rinib qoladi** —
+muallif xatoni gaplar ro'yxatida darrov ko'radi. Teskarisi xavfliroq bo'lardi: bitta
+tasodifiy `[` butun darsni bitta ulkan gapga aylantirib qo'yardi. Ichma-ich qavsda
+faqat tashqi juft olinadi, ichkilari xuddi shu sababdan ko'rinib turadi.
+
+### 2b'. Qo'lda ta'kidlash — `` `...` `` (`emphasis.ts`)
+
+Muallif so'z yoki iborani teskari tirnoqqa olsa, u mashq ekranida **qalin** chiziladi.
+Tirnoqlarning o'zi **targetdan olib tashlanadi** — bu §2a bilan bir mantiq: target faqat
+klaviaturada teriladigan belgilardan iborat, aks holda kursor terib bo'lmaydigan belgida
+qotib qolardi. Ya'ni `` `...` `` — matn muallifining belgisi, mashq kontenti emas.
+
+**Ta'kidlash mazmunga tegmaydi.** Tokenizatsiya, audio, xato hisobi va statistika
+tozalangan matn ustida ishlaydi va oraliqlar haqida umuman bilmaydi. Bu ataylab: qalinlik
+faqat chizishga ta'sir qilsa, uni keyin o'chirish yoki o'zgartirish hech qayerda aks
+etmaydi.
+
+**Qayerda saqlanadi.** `Lesson.sentences` ning ma'nosi O'ZGARMAYDI — u aynan teriladigan
+matn. Oraliqlar alohida ixtiyoriy maydonda: `Lesson.emphasis[i]` — `sentences[i]` uchun.
+Muqobil yechim — belgilarni `sentences` ichida qoldirib, har ishlatish joyida ajratish —
+rad etildi: `sentences` oltita joyda o'qiladi (target, sintez, natijalar, oldindan yuklash)
+va bitta unutilgan joy tirnoqni targetga olib chiqardi. Eski darslarda maydon umuman yo'q
+(qalinlik yo'q), birorta oraliq bo'lmasa esa u saqlanmaydi ham.
+
+**Belgi hisoblanmaydigan holatlar** — `[...]` bilan bir xil falsafada, ikkalasida ham
+tirnoq matnda **ko'rinib qoladi** va muallif xatoni darrov ko'radi:
+
+| Kirish | Sabab |
+|---|---|
+| ``He was `absolutely certain.`` | yopilmagan tirnoq |
+| ``a `` b`` | ichi bo'sh juft — hech narsani ta'kidlamaydi |
+| ``a ` ` b`` | faqat probel — ko'rinadigan narsa yo'q |
+
+Tirnoq **bitta gap ichida** ochilib yopilishi kerak, chunki parser gaplarga
+bo'lingandan KEYIN ishlaydi. Bir nechta gapni birga ta'kidlash uchun ularni avval
+`[...]` bilan bitta birlikka birlashtirish kerak — ikki belgi shu tartibda birga
+ishlaydi va bu testlar bilan qoplangan.
+
+Shu birikma bitta yashirin tuzoq tug'dirdi: guruh bo'laklari **probel bilan ulanadi**,
+ya'ni yopuvchi tirnoq bo'lak boshiga tushsa (`[One. `Two. Three.`]`) uning oldiga probel
+qo'shiladi va tirnoq olingach o'sha probel **target oxirida** qolardi — o'rtada esa
+ikkilangan probel. Bu §2b dagi 3-qadam oldini olgan aynan o'sha nuqson: gap ko'zga
+tugagandek ko'rinadi, lekin `finished` ishlamaydi. Shuning uchun `parseEmphasis`
+belgilarni olgandan **keyin** bo'shliqni qayta tozalaydi va oraliqlarni suradi.
+Belgisi umuman yo'q matn bu yo'lga TUSHMAYDI — ombordagi eski darslar aynan o'zi
+bo'lib qolishi kerak.
+
 ### 2c. Import limitlari
 
 - Paste hajmi **5000 so'z** bilan cheklanadi.
@@ -281,6 +345,37 @@ xuddi shu tartibga bo'ysunadi.
 
 `TypingState`: `{ target, tokens, cursor, typed[], errorCounts:Map<tokenIndex,number>, charErrors:Map<charIndex,number>, pendingWords:Set, playedWords:Set, keystrokes, correctKeystrokes, activeMs, startedAt, lastKeyAt, finishedAt }` — `IDLE_PAUSE_MS = 5000` shu yerda, `types.ts` da.
 
+### ⭐ Ovoz trigger nuqtasi: so'zdan OLDINGI belgi
+
+Avval so'z **o'z birinchi harfida** o'qilardi. Muammo shundaki, o'sha payt foydalanuvchi
+so'zni allaqachon yozishni boshlagan bo'ladi: eshitish yozishga kechikadi va mashq
+"eshit → yoz" emas, "yoz → eshit" bo'lib qolardi. Yangi qoida ovozni bir qadam oldinga
+suradi — so'z **o'zidan oldingi belgi** terilganda o'qiladi, ya'ni foydalanuvchi uni
+**terishdan oldin** eshitadi va yozayotganda mustahkamlaydi.
+
+Nega "probel" emas, aynan "oldingi belgi": tinish belgilari so'z bilan probel orasiga
+kiradi. `He said "hello" to me.` da `hello` dan oldin probel EMAS, qo'shtirnoq turadi.
+Qoida probelga bog'lansa, `hello` boshqa so'zlardan bir bosish kechikib eshitilardi —
+ritm gapdan gapga sakrardi. Shuning uchun trigger — so'zdan oldingi belgi qanday bo'lsa
+o'sha (probel, tirnoq, qavs).
+
+Nega gapning **birinchi so'zi** istisno va eski qoidada qoladi:
+- undan oldin bosiladigan belgi umuman bo'lmasligi mumkin (`The cat sat` — `T` birinchi bosish);
+- belgi bo'lganda ham u bezak: `"The cat," he said.` dagi boshlang'ich qo'shtirnoq gap
+  mazmuniga tegishli emas. Uni trigger qilish so'zni foydalanuvchi hali gapga qaramasdan,
+  terishga tayyor bo'lmasdan o'qib yuborardi — ya'ni ovoz behuda ketardi.
+
+Amaldagi ko'rinish (chapda bosilgan belgi, o'ngda o'qilgan so'z):
+
+| Gap | Ketma-ketlik |
+|---|---|
+| `the cat sat` | `t`→the · probel→cat · probel→sat |
+| `He said "hello" to me.` | `H`→He · probel→said · `"`→hello · probel→to |
+| `"The cat," he said.` | `T`→The (boshdagi `"` hech nima chiqarmaydi) · probel→cat · probel→he · probel→said |
+
+Qoida `typing.ts` dagi `wordToPlay()` va `firstWordIndex()` funksiyalarida, `reduceChar()`
+ularni har bir to'g'ri bosishda chaqiradi.
+
 ### ⭐ Eng muhim tuzatish: ovoz *chiqqanda* belgilanadi
 
 Avvalgi rejada token `playWord` effekti **yuborilganda** `playedWords`ga qo'shilardi. Reducer sof bo'lgani uchun ovoz haqiqatan chiqqanini bilmaydi. Natijada quyidagilarning **har biri** so'zni "o'qilgan" deb belgilab, uni bir martalik qoida bo'yicha **abadiy o'chirardi**:
@@ -290,7 +385,7 @@ prefetch hali tugamagan · `decodeAudioData` buzuq MP3 da yiqilgan · sintez o's
 Va siz buni **sezmaysiz** — jimlik ham "eshitilgan", ham "hech qachon eshitilmagan" degani.
 
 Yangi qoida:
-> To'g'ri harf so'z boshiga tushsa → token `pendingWords`ga qo'shiladi va `playWord` chiqadi.
+> So'zdan OLDINGI belgi to'g'ri terilsa (gapning birinchi so'zi uchun — uning birinchi harfi bosilsa) → token `pendingWords`ga qo'shiladi va `playWord` chiqadi.
 > `playbackStarted` kelganda → `playedWords`ga o'tadi (endi qayta o'qilmaydi).
 > `playbackFailed` kelganda → `pendingWords`dan **chiqariladi** (yana o'qilishi mumkin).
 
@@ -300,12 +395,12 @@ Bu shartingizni buzmaydi: ovoz chiqmagan so'z "bir marta o'qilgan" hisoblanmaydi
 
 | Holat | Yechim |
 |---|---|
-| Noto'g'ri 1-harf | Kursor siljimaydi → ovoz yo'q. |
+| Noto'g'ri belgi bosilishi | Kursor siljimaydi → ovoz yo'q. Keyingi so'z faqat undan oldingi belgi TO'G'RI terilgandagina o'qiladi. |
 | Backspace + qayta yozish | Ovoz chiqmaydi — so'z `playedWords`da. |
 | Bosh harf (`T` vs `t`) | **Qat'iy.** `t` xato, kursor turadi, Shift talab qilinadi. |
 | Bir harfli so'z (`a`, `I`) | Bir xil qoida. Audio §5b dagi guard oynasini oladi; juda tez terishda oyna qisqarishi mumkin — §5b, kechikish byudjeti. |
 | Takrorlangan so'z (`the ... the`) | Har uchrashuv alohida token → har biri bir martadan. |
-| So'z boshi 0-indeksda emas (`"The cat`) | Qoida `t.start` ga tayanadi, `cursor===0` ga emas. Test bilan qoplangan. |
+| Gap tirnoq bilan boshlanadi (`"The cat`) | Boshdagi `"` birinchi so'zni CHIQARMAYDI — birinchi so'z istisno bo'lib, o'z birinchi harfida (`T`) o'qiladi. Qolgan so'zlar oldingi belgiga tayanadi (`wordToPlay`). Test bilan qoplangan. |
 | `forgiving` rejimi | **v1 ga kiritilmaydi.** Unda kursor so'z boshidan noto'g'ri harf bilan o'tib ketadi va ovoz **hech qachon** chiqmaydi — jimgina buziladi. Faqat `block`. |
 | Gapni qayta boshlash (`Tab`) | Yangi holat → `playedWords` bo'shaydi. |
 | Xato hisobi | Backspace `errorCounts`ni tozalamaydi. |
@@ -492,7 +587,7 @@ ko'rsatadi — bu ma'lum cheklov va UI da ochiq aytilgan.
 | Taymer qachon? | Birinchi bosishda. |
 | Skip bormi? | `Escape` — gap tashlanadi, statistikaga kirmaydi. Usiz noma'lum imloda seans boshi berk ko'chaga kirardi. Ikkita oqibati bor: tashlangan gap seans hajmini baribir yeydi, va uning so'zlari uchun ta'sirlanish ham yozilmaydi (yozilsa, o'qimasdan `Escape` bosish xato ulushini sun'iy pasaytirardi). |
 | Bo'sh turish | Bosishlar orasi >5 s → taymer pauza. |
-| Davom ettirish | **Gap darajasida.** Yarim yozilgan gap tashlanadi. Kursorni gap o'rtasidan tiklash mumkin emas: o'tib ketilgan so'z boshi endi hech qachon ovoz bermaydi. Tugagan dars esa 0-indeksdan qayta boshlanadi, oxirgi gapdan emas: "tugagan" belgisi `progress === sentences.length` bo'lgani uchun, uni oxirgi gapga qaytarish Natijalar → "Davom ettirish" → o'sha gap → yana Natijalar tsiklini yasab, har aylanishda bir gaplik seansni statistikaga yozardi. |
+| Davom ettirish | **Gap darajasida.** Yarim yozilgan gap tashlanadi. Kursorni gap o'rtasidan tiklash mumkin emas: o'tib ketilgan so'zning ovoz nuqtasi (undan oldingi belgi) endi hech qachon ovoz bermaydi. Tugagan dars esa 0-indeksdan qayta boshlanadi, oxirgi gapdan emas: "tugagan" belgisi `progress === sentences.length` bo'lgani uchun, uni oxirgi gapga qaytarish Natijalar → "Davom ettirish" → o'sha gap → yana Natijalar tsiklini yasab, har aylanishda bir gaplik seansni statistikaga yozardi. |
 | Seans uzunligi | 20 gap yoki 10 daqiqa — qaysi biri oldin tugasa → Natijalar ekrani. Agar bitta ham gap yozilmagan bo'lsa — Bosh sahifaga qaytadi: bo'sh seans statistikani faqat ifloslantirardi. **"Yozilgan" — `skipped` bo'lmagan gap.** Yozuvlar SONIGA qaralsa, hammasi `Escape` bilan tashlangan seans ham "bo'sh emas" ko'rinardi va omborga `activeMs: 0`, `netWpm: 0` bo'lgan seans tushardi — ya'ni qoida aynan o'zi oldini olishi kerak bo'lgan holatni o'tkazib yuborardi. Darvoza `hasWrittenSentence()` sof funksiyasida va test bilan mixlangan (§9). |
 | Ovoz yoqiqmi? | Almashtirgich holati `dnt.audio.v1` da saqlanadi va HAR GAP uchun alohida yoziladi — tugmani seans o'rtasida ham bosish mumkin (§6a, §8). |
 | "Dars" nima? | Bitta import qilingan matn. Seans — uning bir bo'lagi. Ovoz va tezlik ham darsning xossasi (§8). |
@@ -506,8 +601,9 @@ ko'rsatadi — bu ma'lum cheklov va UI da ochiq aytilgan.
 
 **M2 — TTS server va asosiy mexanika. BAJARILDI.** `server/*` (har chaqiruvga yangi
 instance, timeout, atomik yozish), `AudioManager` (trim, guard, fade),
-`playbackStarted/Failed` zanjiri. Chiqdi: 1-harfda so'z bir marta eshitiladi — guard
-oynasi doirasida (aniq kafolat §5b da).
+`playbackStarted/Failed` zanjiri. Chiqdi: so'z o'zidan oldingi belgi terilganda (gapning
+birinchi so'zi — 1-harfida) bir marta eshitiladi — guard oynasi doirasida (aniq kafolat
+§5b da).
 
 **⭐ M2/M3 oralig'idagi gate — shaxsiy tekshiruv.** Matn ko'rinib turgani uchun mashqni **ovozsiz ham** bajarish mumkin — ya'ni audio vazifa uchun majburiy emas, faqat qo'shimcha. Kunma-kun almashtirib (ovoz yoqiq / o'chiq) bir xil hajmdagi matn teriladi. Agar WPM va aniqlik farq qilmasa — audio qayta ishlanmayapti va mexanikani qayta ko'rib chiqish kerak. Bu gipotezani tekshirishning eng arzon yo'li va baribir qiladigan mashqingizdan boshqa hech narsa talab qilmaydi.
 
@@ -576,7 +672,7 @@ aytadi.
 
 **`npm test` = `tsc --noEmit` + Vitest.** Uchta loyiha: `core`, `server`, `client` — sof
 mantiq testlari React plagini va `/api` proksisini tortib kelmasligi uchun alohida.
-Hozirgi holat: 15 fayl, 459 test, hammasi o'tadi.
+Hozirgi holat: 16 fayl, 568 test, hammasi o'tadi.
 
 `client` loyihasi `AudioManager` uchun bor — u brauzer API'lariga tayanadi. `jsdom`
 ATAYIN qo'shilmagan: kerak bo'lgani `window.AudioContext` va `fetch`, ikkalasi ham testda
@@ -589,11 +685,11 @@ qo'lda qo'yiladi. Shu bilan §1 dagi "ortiqcha paket yo'q" qoidasi buzilmaydi.
 - `filename`: `The`→`the.mp3`; `US`→`us@caps.mp3`; `don't` va `don-t` → **turli** fayllar; `-25%` → `@` yorlig'i. Shu yerda `overrides.ts` ham qoplanadi: jadval bo'ylab aylanib HAR BIR kalit uchun `synthTextFor` tekshiriladi, kalitlar kichik harfli ekani va to'qqiztaligi mixlanadi — ya'ni jadvaldan kalit tushib qolsa test qizaradi (§10 dagi "ikkalasi ham testlar bilan qoplangan" da'vosi shu).
 - `typing`:
   - `t` target `T` ga qarshi → **xato**, kursor turadi (qat'iy bosh harf);
-  - har so'z boshida aynan bitta `playWord`;
+  - har so'z uchun aynan bitta `playWord` (so'zdan oldingi belgi terilganda; gapning birinchi so'zi uchun — uning birinchi harfida);
   - backspace + qayta yozish → `playWord` **yo'q**;
   - `playbackFailed` dan keyin **o'sha token qayta o'qilishi mumkin**;
   - `"the cat and the dog"` → 2 ta alohida `playWord`;
-  - `"The cat," he said.` → birinchi token **1-indeksda**, `playWord` baribir chiqadi;
+  - `"The cat," he said.` → birinchi token **1-indeksda**, `playWord` baribir chiqadi — boshdagi `"` da emas, `T` da (birinchi so'z istisnosi);
   - `Ctrl+A`, `ArrowLeft`, `F5` → hech qanday holat o'zgarmaydi;
   - `Tab` dan keyin ovozlar tiklanadi; oxirgi belgidan keyin `finished`.
 - `metrics`: qo'lda hisoblangan qiymatga tenglik; 5 s dan uzun tanaffus taymerga qo'shilmaydi.
@@ -621,7 +717,7 @@ umumiy testlarning uchdan birini tashkil qiladi:
 **Qo'lda E2E** (`npm run dev`):
 1. `rm -rf node_modules && npm i && npm run dev` → global paketsiz ishga tushadi; 8787 band bo'lsa **ikkalasi ham to'xtaydi** (jimgina degradatsiya emas).
 2. Saytdan aqlli qo'shtirnoqli xatboshi paste qilinadi → normalizatsiya diff'i ko'rinadi → **gap oxirigacha yozib bo'ladi** (avvalgi rejada bu joyda qotib qolardi).
-3. Har so'zning 1-harfida o'sha so'z eshitiladi. Odatiy tezlikda `a`, `I`, `is` to'liq eshitiladi. ATAYLAB juda tez terilganda har ikkinchi qisqa so'zning kesilishi — **kutilgan** xatti-harakat (§5b, kechikish byudjeti), xato emas. Buni ko'rish uchun qisqa so'zlar ketma-ket kelgan gapni imkon qadar tez tering.
+3. Har so'z o'zidan oldingi belgi terilganda eshitiladi (gapning birinchi so'zi — o'z 1-harfida), ya'ni so'zni yozishdan OLDIN eshitasiz. Odatiy tezlikda `a`, `I`, `is` to'liq eshitiladi. ATAYLAB juda tez terilganda har ikkinchi qisqa so'zning kesilishi — **kutilgan** xatti-harakat (§5b, kechikish byudjeti), xato emas. Buni ko'rish uchun qisqa so'zlar ketma-ket kelgan gapni imkon qadar tez tering.
 4. Backspace + qayta yozish → ovoz takrorlanmaydi. `Tab` → ovozlar tiklanadi.
 5. Serverni to'xtatib davom etish → `speechSynthesis` zaxirasi ishlaydi; DevTools da `/api/tts/batch` ni bloklab qo'yish → o'sha so'z **keyin ham eshitilishi mumkin** (`playbackFailed` zanjiri).
 6. Gapni tugatish → `Enter` kutiladi, oxirgi so'z audiosi kesilmaydi → Natijalar; sahifa yangilangach statistika joyida.

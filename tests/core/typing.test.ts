@@ -46,6 +46,33 @@ function playWordIndexes(effects: Effect[]): number[] {
   return effects.flatMap((e) => (e.type === 'playWord' ? [e.tokenIndex] : []))
 }
 
+/**
+ * Gapni boshidan oxirigacha yozadi va har bir `playWord` ni uni CHIQARGAN bosish
+ * bilan birga qaytaradi: `'" " -> cat'`.
+ *
+ * Ovoz VAQTI aynan shu yordamchi orqali qotiriladi. `playWordIndexes` bunga
+ * yaramaydi: trigger bir bosish oldinga surilganda ham o'qilgan tokenlar
+ * KETMA-KETLIGI o'zgarmaydi, ya'ni u o'zgarishni umuman sezmaydi.
+ */
+function playTrace(target: string): string[] {
+  let s = createState(target)
+  const clock = makeClock()
+  const trace: string[] = []
+
+  for (const char of target) {
+    const r = reduce(s, { type: 'char', char }, clock())
+    s = r.state
+    for (const effect of r.effects) {
+      if (effect.type !== 'playWord') continue
+      trace.push(`${JSON.stringify(char)} -> ${s.tokens[effect.tokenIndex]?.text ?? '?'}`)
+      // Ovoz chiqqani tasdiqlanadi — aks holda token `pendingWords` da osilib
+      // qolardi va bu trigger emas, kutish mantig'ini sinagan bo'lardi.
+      s = reduce(s, { type: 'playbackStarted', tokenIndex: effect.tokenIndex }, clock()).state
+    }
+  }
+  return trace
+}
+
 function hasFinished(effects: Effect[]): boolean {
   return effects.some((e) => e.type === 'finished')
 }
@@ -161,7 +188,7 @@ describe('block rejimi — qat\'iy bosh harf', () => {
   })
 })
 
-describe('playWord — har so\'z boshida aynan bitta', () => {
+describe('playWord — har so\'z uchun aynan bitta', () => {
   it('har so\'z boshida bitta va faqat bitta `playWord` chiqadi', () => {
     const { effects } = typeAll('the cat')
     expect(playWordIndexes(effects)).toEqual([0, 2])
@@ -209,6 +236,8 @@ describe('playWord — har so\'z boshida aynan bitta', () => {
     const s0 = createState(target)
 
     // Qoida `token.start` ga tayanadi, `cursor === 0` ga emas.
+    // Qo'shtirnoq birinchi so'zni CHIQARMAYDI: u — gapning birinchi so'zi, ya'ni
+    // "oldingi belgi" qoidasidan istisno (`wordToPlay`).
     expect(s0.tokens[0]?.kind).toBe('gap')
     expect(s0.tokens[0]?.text).toBe('"')
     expect(s0.tokens[1]?.kind).toBe('word')
@@ -242,6 +271,103 @@ describe('playWord — har so\'z boshida aynan bitta', () => {
     const back = reduce(first.state, { type: 'backspace' }, 5_000)
     const again = typeChars(back.state, 't')
     expect(playWordIndexes(again.effects)).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ⭐ Ovoz VAQTI (PLAN §4): so'z o'zidan OLDINGI belgi terilganda o'qiladi,
+// gapning birinchi so'zi esa o'z birinchi harfida.
+// ---------------------------------------------------------------------------
+
+describe('playWord vaqti — ovoz so\'zdan bir bosish oldin', () => {
+  it('har so\'z oldingi PROBELDA, birinchisi esa o\'z harfida o\'qiladi', () => {
+    expect(playTrace('the cat sat')).toEqual(['"t" -> the', '" " -> cat', '" " -> sat'])
+  })
+
+  it('tirnoqdan keyingi so\'z TIRNOQ bosilganda o\'qiladi — ritm buzilmaydi', () => {
+    expect(playTrace('He said "hello" to me.')).toEqual([
+      '"H" -> He',
+      '" " -> said',
+      '"\\"" -> hello',
+      '" " -> to',
+      '" " -> me',
+    ])
+  })
+
+  it('qavsdan keyingi so\'z QAVS bosilganda o\'qiladi', () => {
+    expect(playTrace('a (big) dog')).toEqual(['"a" -> a', '"(" -> big', '" " -> dog'])
+  })
+
+  it('gap tirnoq bilan boshlansa ham BIRINCHI so\'z o\'z harfida o\'qiladi', () => {
+    expect(playTrace('"The cat," he said.')).toEqual([
+      '"T" -> The',
+      '" " -> cat',
+      '" " -> he',
+      '" " -> said',
+    ])
+  })
+
+  it('bir harfli so\'z (`I`, `a`) ham oldingi probelda o\'qiladi', () => {
+    expect(playTrace('I am a cat.')).toEqual([
+      '"I" -> I',
+      '" " -> am',
+      '" " -> a',
+      '" " -> cat',
+    ])
+  })
+
+  it('vergul + probelda ovoz PROBELDA chiqadi, vergulda emas', () => {
+    expect(playTrace('one, two')).toEqual(['"o" -> one', '" " -> two'])
+  })
+
+  // Eng muhim kafolat: trigger oldinga surilgani bilan birorta so'z JIM qolmasligi
+  // kerak. Tinish belgilariga to'la gapda har bir `word` token, tartibi bilan, aynan
+  // bir marta o'qiladi.
+  it('tinish belgilariga to\'la gapda birorta so\'z jim qolmaydi', () => {
+    const target = '"Hello," said Dr. Smith (again). It\'s fine!'
+    const words = createState(target)
+      .tokens.filter((t) => t.kind === 'word')
+      .map((t) => t.text)
+
+    const played = playTrace(target).map((row) => row.split(' -> ')[1])
+    expect(played).toEqual(words)
+  })
+
+  it('ovoz chiqqanda kursor so\'z BOSHIDA turadi — harfi hali terilmagan', () => {
+    let s = createState('the cat')
+    const clock = makeClock()
+    let seen = false
+
+    for (const char of 'the ') {
+      const r = reduce(s, { type: 'char', char }, clock())
+      s = r.state
+      for (const effect of r.effects) {
+        if (effect.type !== 'playWord' || effect.tokenIndex !== 2) continue
+        seen = true
+        // `cat` o'qildi, lekin `c` hali bosilmagan — mana shu butun o'zgarishning maqsadi.
+        expect(s.cursor).toBe(s.tokens[2]?.start)
+        expect(s.typed.join('')).toBe('the ')
+      }
+    }
+    expect(seen).toBe(true)
+  })
+
+  it('probelni backspace bilan o\'chirib qayta terish ovozni TAKRORLAMAYDI', () => {
+    const upToSpace = typeChars(createState('the cat'), 'the ')
+    expect(playWordIndexes(upToSpace.effects)).toEqual([0, 2])
+
+    // Ikkala ovoz ham chiqqani tasdiqlanadi -> `playedWords`.
+    let s = upToSpace.state
+    for (const tokenIndex of [0, 2]) {
+      s = reduce(s, { type: 'playbackStarted', tokenIndex }, 2_000).state
+    }
+
+    const back = reduce(s, { type: 'backspace' }, 2_100)
+    expect(playWordIndexes(typeChars(back.state, ' ').effects)).toEqual([])
+  })
+
+  it('so\'zsiz gap (`...`) hech qanday ovoz chiqarmaydi', () => {
+    expect(playTrace('...')).toEqual([])
   })
 })
 

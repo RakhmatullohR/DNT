@@ -15,6 +15,7 @@ import { requestBatch, serverAvailable } from '../audio/ttsClient.ts'
 import { Button } from '../components/Button.tsx'
 import { EmptyState } from '../components/EmptyState.tsx'
 import { NormalizeDiff } from '../components/NormalizeDiff.tsx'
+import { parseEmphasis } from '../core/emphasis.ts'
 import { normalize } from '../core/normalize.ts'
 import type { NormalizeResult } from '../core/normalize.ts'
 import { splitSentences } from '../core/splitSentences.ts'
@@ -311,6 +312,15 @@ export function Import() {
     if (runningRef.current || !canImport || analysis === null) return
     runningRef.current = true
 
+    // Ta'kidlash belgilari (`` `...` ``) SAQLASHDA ajratiladi: ekrandagi ro'yxat
+    // muallif yozgan matnni ko'rsatib turadi, omborga esa TOZALANGAN target va
+    // oraliqlar alohida tushadi. Shu tufayli `Lesson.sentences` ning ma'nosi
+    // o'zgarmaydi — u aynan teriladigan matn (PLAN §2a).
+    const parsed = sentences.map(parseEmphasis)
+    const targets = parsed.map((item) => item.text)
+    const ranges = parsed.map((item) => item.ranges)
+    const hasEmphasis = ranges.some((list) => list.length > 0)
+
     const lesson: Lesson = {
       id: newLessonId(),
       title: finalTitle === '' ? 'Nomsiz dars' : finalTitle,
@@ -318,8 +328,9 @@ export function Import() {
       originalText: analysis.original,
       // Saqlangan target aynan mashq qilinadigan gaplardan yig'iladi — qo'lda
       // bo'lingandan keyin `result.text` bilan farq qilishi mumkin.
-      normalizedText: sentences.join(' '),
-      sentences,
+      normalizedText: targets.join(' '),
+      sentences: targets,
+      emphasis: hasEmphasis ? ranges : undefined,
       progress: 0,
       voice,
       rate,
@@ -328,9 +339,12 @@ export function Import() {
     // dars yo'qolmaydi (PLAN §1 — audio majburiy emas).
     saveLesson(lesson)
 
+    // Sintez TOZALANGAN matndan yig'iladi: xom matnda teskari tirnoq `gap` bo'lib
+    // tushardi va so'zlar ro'yxati baribir bir xil chiqardi, lekin bu tasodif —
+    // audio manbai target bilan bitta bo'lgani ANIQ turgani ma'qul.
     const requested = new Set<string>()
-    const head = collectWords(sentences.slice(0, HEAD_SENTENCES), requested)
-    const rest = collectWords(sentences.slice(HEAD_SENTENCES), requested)
+    const head = collectWords(targets.slice(0, HEAD_SENTENCES), requested)
+    const rest = collectWords(targets.slice(HEAD_SENTENCES), requested)
     const target = `/practice/${encodeURIComponent(lesson.id)}`
 
     setPhase({ kind: 'synth', done: 0, total: head.length })
@@ -495,6 +509,21 @@ export function Import() {
           Ovoz va tezlik darsga bog&apos;lanadi: audio fayl nomi ulardan hosil bo&apos;ladi,
           shuning uchun keyin o&apos;zgartirish so&apos;zlarni qaytadan sintez qilishni talab
           qiladi.
+        </p>
+        {/* Guruhlash qoidasi aynan shu maydon yonida turadi: u matn YOZILAYOTGANDA
+            kerak, gaplar ro'yxati chiqqanda esa allaqachon kech. */}
+        <p className="mt-2 font-mono text-[11px] leading-relaxed text-[#7d8b9c]">
+          Bir-birini to&apos;ldiradigan gaplarni ajratmaslik uchun ularni{' '}
+          <span className="text-text">[kvadrat qavs]</span> ichiga oling — qavs ichidagi
+          gaplar nechta bo&apos;lsa ham bitta mashq birligi bo&apos;lib qoladi. Qavs gap
+          boshida ochilib gap oxirida yopilishi shart; qavslarning o&apos;zi terilmaydi.
+        </p>
+        <p className="mt-2 font-mono text-[11px] leading-relaxed text-[#7d8b9c]">
+          So&apos;z yoki iborani <span className="text-text">`teskari tirnoq`</span> ichiga
+          olsangiz, u mashq paytida <span className="font-bold text-text">qalin</span>{' '}
+          ko&apos;rinadi. Tirnoqlar ham terilmaydi. Tirnoq bitta gap ichida ochilib
+          yopilishi kerak — bir nechta gapni birga ta&apos;kidlash uchun avval ularni
+          kvadrat qavsga oling.
         </p>
       </section>
 

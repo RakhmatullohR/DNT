@@ -7,6 +7,9 @@
 // nusxasi birinchisining o'zgarishini bosib ketishi mumkin. Bu ongli qaror:
 // qulflash yoki `storage` hodisasi bilan birlashtirish v1 doirasidan tashqarida.
 
+import type { EmphasisRange } from '../core/emphasis.ts'
+import { parseEmphasis } from '../core/emphasis.ts'
+
 const LESSONS_KEY = 'dnt.lessons.v1'
 
 /**
@@ -40,6 +43,16 @@ export type Lesson = {
    * chaqiruvchi kod uchun u amalda majburiy.
    */
   skipped?: number[]
+  /**
+   * Har gap uchun QALIN chiziladigan oraliqlar: `emphasis[i]` — `sentences[i]` uchun,
+   * indekslar o'sha gap matnida. Import paytida `` `...` `` belgilaridan hosil bo'ladi;
+   * belgilarning o'zi `sentences` ga TUSHMAYDI (`core/emphasis.ts`).
+   *
+   * IXTIYORIY, `skipped` bilan bir xil sababdan: keyin qo'shilgan va eski darslarda
+   * umuman yo'q — bunda qalinlik ham bo'lmaydi. Bundan tashqari birorta gapda oraliq
+   * bo'lmasa maydon SAQLANMAYDI: 500 gapli darsda `[[],[],...]` bekorga joy egallardi.
+   */
+  emphasis?: EmphasisRange[][]
   voice: string
   rate: number
 }
@@ -95,6 +108,7 @@ function toLesson(raw: unknown): Lesson | null {
   }
 
   const normalizedText = toText(raw['normalizedText'], '')
+  const marks = readMarks(sentences, raw['emphasis'])
 
   return {
     id,
@@ -102,9 +116,10 @@ function toLesson(raw: unknown): Lesson | null {
     createdAt: toFiniteNumber(raw['createdAt'], 0),
     originalText: toText(raw['originalText'], normalizedText),
     normalizedText,
-    sentences,
-    progress: clampProgress(toFiniteNumber(raw['progress'], 0), sentences.length),
-    skipped: toSkipped(raw['skipped'], sentences.length),
+    sentences: marks.sentences,
+    progress: clampProgress(toFiniteNumber(raw['progress'], 0), marks.sentences.length),
+    skipped: toSkipped(raw['skipped'], marks.sentences.length),
+    emphasis: marks.emphasis,
     voice: toText(raw['voice'], ''),
     rate: toFiniteNumber(raw['rate'], 0),
   }
@@ -131,6 +146,104 @@ function toSkipped(raw: unknown, total: number): number[] {
     seen.add(index)
   }
   return [...seen].sort((a, b) => a - b)
+}
+
+/**
+ * ⭐ Gap matni + ta'kidlash oraliqlari — ombordan o'qishning YAGONA nuqtasi.
+ *
+ * Ikki manba bo'lishi mumkin:
+ *
+ * 1. `emphasis` maydoni BOR — dars ta'kidlash qo'shilgandan keyin saqlangan.
+ *    Gaplar allaqachon toza (belgilar import paytida ajratilgan), oraliqlar esa
+ *    faqat tekshiriladi.
+ *
+ * 2. `emphasis` maydoni YO'Q — dars undan OLDIN saqlangan. Bunday darsda `` `...` ``
+ *    hali gap matnining ICHIDA turadi: o'sha paytda u oddiy belgi edi va TARGETGA
+ *    tushardi, ya'ni foydalanuvchi teskari tirnoqni qo'lda terishga majbur bo'lardi.
+ *    Shuning uchun belgilar shu yerda, O'QISHDA ajratiladi.
+ *
+ * Ko'chirish xavfsiz va idempotent: belgisi yo'q gap uchun `parseEmphasis` matnni
+ * aynan o'zini qaytaradi, ya'ni ta'kidlashsiz darslarga umuman tegilmaydi. Yangi kod
+ * saqlagan darsda esa juftlangan belgilar allaqachon olib tashlangan — qolgan yolg'iz
+ * tirnoq ATAYIN qoldirilgan va `parseEmphasis` uni ham qaytadan tegmasdan o'tkazadi.
+ *
+ * Gaplar SONI o'zgarmaydi, shuning uchun `progress`, `skipped` va statistikadagi
+ * `sentenceIndex` yozuvlari o'z ma'nosini saqlaydi.
+ */
+function readMarks(
+  sentences: string[],
+  rawEmphasis: unknown,
+): { sentences: string[]; emphasis: EmphasisRange[][] | undefined } {
+  const stored = toEmphasis(rawEmphasis, sentences)
+  if (stored !== undefined) return { sentences, emphasis: stored }
+
+  const text: string[] = []
+  const ranges: EmphasisRange[][] = []
+  let changed = false
+  for (const sentence of sentences) {
+    const parsed = parseEmphasis(sentence)
+    if (parsed.text !== sentence) changed = true
+    text.push(parsed.text)
+    ranges.push(parsed.ranges)
+  }
+  // Hech narsa o'zgarmasa ESKI massiv qaytadi: keraksiz nusxa ham, `emphasis: []`
+  // kabi bo'sh maydon ham yasalmaydi.
+  if (!changed) return { sentences, emphasis: undefined }
+
+  return { sentences: text, emphasis: ranges.some((list) => list.length > 0) ? ranges : undefined }
+}
+
+/**
+ * Ta'kidlash oraliqlarini normallashtiradi: ro'yxat uzunligi `sentences` ga
+ * tenglashtiriladi, yaroqsiz oraliqlar tashlanadi, natija o'sish tartibida va
+ * KESISHMASDAN qaytadi (chizuvchi aynan shunga tayanadi).
+ *
+ * `toSkipped` bilan bir xil qaror: buzuq yozuv butun darsni yo'q qilmaydi —
+ * ta'kidlash bezak, dars matni undan muhimroq.
+ *
+ * Chegara `sentences[i].length` bo'yicha tekshiriladi: gap qisqargan (yoki ombor
+ * qo'lda tahrirlangan) bo'lsa, chegaradan chiqqan oraliq chizuvchiga yetib borsa
+ * hech qanday belgiga mos kelmasdi va jimgina yo'qolardi.
+ *
+ * Hech bir gapda oraliq qolmasa `undefined` qaytadi — maydon saqlanmaydi.
+ */
+function toEmphasis(raw: unknown, sentences: readonly string[]): EmphasisRange[][] | undefined {
+  if (!Array.isArray(raw)) return undefined
+
+  let found = false
+  const result: EmphasisRange[][] = []
+  for (let i = 0; i < sentences.length; i += 1) {
+    const list = toRangeList(raw[i], (sentences[i] ?? '').length)
+    if (list.length > 0) found = true
+    result.push(list)
+  }
+  return found ? result : undefined
+}
+
+/** Bitta gapning oraliqlari: tartiblangan, kesishmagan, chegara ichida. */
+function toRangeList(raw: unknown, limit: number): EmphasisRange[] {
+  if (!Array.isArray(raw)) return []
+
+  const ranges: EmphasisRange[] = []
+  for (const item of raw) {
+    if (!isRecord(item)) continue
+    const start = Math.floor(toFiniteNumber(item['start'], -1))
+    const end = Math.floor(toFiniteNumber(item['end'], -1))
+    if (start < 0 || end <= start || end > limit) continue
+    ranges.push({ start, end })
+  }
+  ranges.sort((a, b) => a.start - b.start)
+
+  const clean: EmphasisRange[] = []
+  let last = 0
+  for (const range of ranges) {
+    // Kesishgan oraliq butunlay tashlanadi, kesilmaydi: birlashtirish yoki qirqish
+    // buzuq yozuvdan "mazmunli" natija to'qib chiqarardi.
+    if (range.start < last) continue
+    clean.push(range)
+    last = range.end
+  }
+  return clean
 }
 
 /**
@@ -287,6 +400,7 @@ export function saveLesson(lesson: Lesson): void {
     ...lesson,
     progress: clampProgress(lesson.progress, lesson.sentences.length),
     skipped: toSkipped(lesson.skipped, lesson.sentences.length),
+    emphasis: toEmphasis(lesson.emphasis, lesson.sentences),
   }
   const stored = readStored()
   const lessons = stored.lessons
