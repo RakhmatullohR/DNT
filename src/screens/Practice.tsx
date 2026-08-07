@@ -6,8 +6,13 @@
 // `Escape` ni hook allaqachon eshitadi va ikkinchi tinglovchi har bosishni ikki
 // marta hisoblab yuborardi. Shu sababli "Enter bosing" ko'rsatkichi ham
 // tugma emas, balki shunchaki ko'rsatma.
+//
+// Diqqat rejimi (`focusMode`) ham shu qoidaga bo'ysunadi: u SOF KO'RINISH
+// holati — global tinglovchi qo'shmaydi va seansga umuman tegmaydi. Yozuv,
+// taymer, ovoz va statistika rejimdan qat'i nazar bir xil ishlayveradi.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { KeyboardEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { Button } from '../components/Button.tsx'
@@ -38,6 +43,115 @@ const LINK_BTN_BASE =
   'inline-flex h-10 items-center justify-center rounded-control border px-4 font-mono text-[13px] font-medium transition-colors duration-150 ease-out focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0e141c] focus-visible:outline-none'
 const LINK_BTN_PRIMARY = `${LINK_BTN_BASE} border-transparent bg-[#5ee6c1] text-[#04231c] hover:bg-[#7cf0d3]`
 const LINK_BTN_GHOST = `${LINK_BTN_BASE} border-[#22303d] text-[#c6d3de] hover:border-[#334556] hover:bg-[#131b23] hover:text-[#e6edf3]`
+
+/** Yozuv maydoni oddiy rejimda: panel karta va fokus halqasi (sahifa fonida turadi). */
+const FIELD_NORMAL = `${PANEL} mx-auto mt-4 max-w-5xl p-6 focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f14] focus-visible:outline-none sm:p-8`
+
+/**
+ * Yozuv maydoni diqqat rejimida: chegara, fon va fokus halqasi YO'Q.
+ *
+ * Karta shakli bo'lakni ATROFIDAGI narsalardan ajratish uchun kerak edi —
+ * diqqat rejimida esa atrofda hech narsa yo'q, ya'ni chegara faqat ko'zni
+ * bo'ladigan ramka bo'lib qolardi.
+ *
+ * `outline-none` SHART: maydon `tabIndex={0}` bilan fokus oladi va brauzer
+ * unga o'z halqasini chizardi. Fokus qayerdaligi baribir bilinadi — matn
+ * ichidagi kursor chizig'i aynan shu maqsadda turadi, chiqish tugmasi esa
+ * fokus olganda o'z halqasini ko'rsatadi.
+ *
+ * BO'SHLIQ SHU YERDA YO'Q — hammasi qatlamning `p-[30px]` ida (`DIALOG`).
+ * Maydon va uni o'rab turgan elementlarning padding/margin yig'indisi aynan
+ * 30px bo'lishi kerak, shuning uchun oraliq o'ram ham butunlay olib
+ * tashlangan: ilgari bu yerda `p-4 sm:p-8` li markazlashtiruvchi div turardi
+ * va yig'indi 48px/80px ga chiqardi. Kenglik cheklovi (`max-w-5xl`) ham
+ * yo'q — u 1024px dan keng oynada maydonni o'rtaga tortib, chekkagacha
+ * bo'lgan masofani 30px dan ancha kattaga aylantirardi.
+ *
+ * Joylashuv: BALANDLIK bo'yicha tepada (`justify-start`), UFQ bo'yicha o'rtada
+ * (`items-center`). Ustun yo'nalishidagi flexda `items-center` bolaning eniga
+ * ham ta'sir qiladi — u cho'zilmay, mazmuni bo'yicha qisqaradi va shu bilan
+ * chinakam markazga tushadi. Uzun gap bunda kengaymay qolmaydi: eni yetmasa
+ * maydonni to'ldirib, odatdagidek qatorlarga bo'linadi.
+ *
+ * `min-h-full` — maydon (fokus va tanlash hududi) oynani to'liq egallaydi,
+ * matn esa tepada qoladi. Tepaga tekislanganda uzun matn faqat pastga o'sadi,
+ * ya'ni qatlam skrollansa ham matnning boshi hech qachon kesilmaydi.
+ */
+const FIELD_FOCUS = 'flex min-h-full w-full flex-col items-center justify-start outline-none'
+
+/**
+ * Diqqat rejimi qatlami: butun oynani qoplaydi va faqat yozuv maydonini
+ * qoldiradi.
+ *
+ * ⭐ `show()`, `showModal()` EMAS — bu qaror o'lchov bilan olingan.
+ *
+ * Modal dialog "yuqori qatlam"ga (top layer) chiqadi, u esa BUTUN oddiy
+ * stacking-kontekstdan yuqorida turadi. Natijada sahifaga tashqaridan
+ * qo'shilgan har qanday interfeys — Google Translate ning matn tanlanganda
+ * chiqadigan ikonkasi, parol menejeri, lug'at kengaytmalari — qatlam OSTIDA
+ * bo'yalardi, garchi ularning `z-index` i 2147483647 bo'lsa ham. Ustiga modal
+ * dialog ortidagi hamma narsani bloklaydi, ya'ni ko'ringan taqdirda ham
+ * bosib bo'lmasdi. O'lchov (bir xil qatlam, bir xil `z-index: 50`):
+ *   `showModal()` -> ustidagi element: bizning maydon;
+ *   `show()`      -> ustidagi element: kengaytmaniki.
+ * Mashq matnini tanlab tarjima qilish — bu ilovada kutiladigan ish, shuning
+ * uchun modal rejimdan voz kechildi.
+ *
+ * Modal bo'lmagan dialog uchun brauzer ikki narsani endi BAJARMAYDI, ya'ni
+ * ular qo'lda qilinadi:
+ *   - qatlam yuqori qatlamga chiqmaydi -> `z-50` yetarli: `Layout` dagi
+ *     sticky sarlavha `z-20` da va ikkalasi bir xil stacking-kontekstda;
+ *   - ort fon o'z-o'zidan inert bo'lmaydi -> effekt `<main>` ning qo'shni
+ *     elementlariga (sarlavha, `ServerBanner`, o'tkazib yuborish havolasi)
+ *     `inert` qo'yadi. Usiz ko'rinmay qolgan navigatsiyaga `Shift+Tab` bilan
+ *     (u ilova tomonidan tutilmaydi — `core/keyboard.ts` dagi `isShiftTab`)
+ *     yoki ekran o'quvchi bilan yetib borish mumkin edi. Kengaytmalarning
+ *     elementlari `<body>` da, ya'ni bu ro'yxatga TUSHMAYDI va ishlayveradi.
+ *
+ * `overscroll-contain` — modal dialog sahifa skrollini o'zi to'xtatardi;
+ * modalsizida esa qatlam oxiriga yetgan g'ildirak ortdagi sahifani surib
+ * yuborardi.
+ *
+ * Fon `#21222c` — ilovaning `--color-base` (`#0b0f14`) idan FARQ QILADI va bu
+ * ataylab: diqqat rejimi boshqa ekran emas, boshqa MUHIT. Rang bir bosqich
+ * ochiqroq va ko'kroq: qorong'i xonada sof qora-ko'k fondagi matnning keskin
+ * chekkasi ko'zni tezroq charchatadi. Matn ranglari kontrastni saqlaydi —
+ * eng past juftlik yozilmagan matn `#7d8b9c` bo'lib, 4.54:1 beradi (WCAG AA
+ * uchun oddiy matnda 4.5:1 talab qilinadi, bu yerdagi 21/25px matn esa
+ * "yirik" hisoblanib, 3:1 bilan ham yetarli bo'lardi).
+ *
+ * `max-h-none`/`max-w-none`/`m-0`/`border-0` — brauzerning `dialog` uchun
+ * standart uslublarini (markazga tortilgan, mazmun bo'yicha o'lchamli, ramkali
+ * quti) yechish uchun.
+ *
+ * `p-[30px]` — yozuv maydonini o'rab turgan YAGONA bo'shliq: maydonning o'zida
+ * ham, oradagi elementlarda ham padding/margin yo'q (`FIELD_FOCUS`), ya'ni matn
+ * oyna chekkasidan aynan 30px da turadi va bu masofa bitta joydan boshqariladi.
+ * `box-sizing: border-box` (Tailwind preflight) tufayli `h-full` shu paddingni
+ * O'Z ICHIGA oladi — qatlam oynadan tashqariga chiqmaydi.
+ */
+const DIALOG = [
+  'fixed inset-0 z-50 m-0 h-full max-h-none w-full max-w-none',
+  'overflow-y-auto overscroll-contain border-0 bg-[#21222c] p-[30px] text-[#e6edf3]',
+].join(' ')
+
+/**
+ * Diqqat rejimi qatlamining foni — PWA oynasining sarlavha panelini bo'yash
+ * uchun (`theme-color`, `index.html` ga qarang).
+ *
+ * Qiymat yuqoridagi `bg-[#21222c]` bilan bir xil bo'lishi SHART, lekin sinf
+ * bu konstantadan yasala olmaydi: Tailwind manba faylni matn sifatida o'qiydi
+ * va o'zgaruvchining qiymatini bilmaydi, ya'ni sinf umuman generatsiya
+ * qilinmasdi. Shuning uchun rang ikki joyda yozilgan — o'zgartirilsa ikkovi
+ * ham yangilanishi kerak.
+ */
+const FOCUS_BG = '#21222c'
+
+/** Diqqat rejimidagi chiqish tugmasi shuncha vaqt harakatsizlikdan keyin so'nadi. */
+const CONTROLS_IDLE_MS = 2_500
+
+/** Chiqish tugmasining nomi — `aria-label` va `title` uchun YAGONA manba. */
+const EXIT_LABEL = 'Diqqat rejimidan chiqish'
 
 /** Yorliqlar: bosishlarni HOOK bajaradi, bu yerda faqat hujjatlashtiriladi (PLAN §4). */
 const SHORTCUTS: readonly { key: string; text: string }[] = [
@@ -331,6 +445,102 @@ function Sentence({
   )
 }
 
+/**
+ * ⭐ Diqqat rejimining YAGONA boshqaruvi — shu tugma ham kiritadi, ham chiqaradi.
+ *
+ * Nega alohida komponent: tugma ikki xil joyda chiqadi (oddiy rejimda boshqaruv
+ * qatorida, diqqat rejimida qatlam burchagida), lekin xatti-harakati va
+ * yozuvi bir manbadan kelishi kerak — ikki nusxa yozilsa ular vaqt o'tib
+ * ajralib ketardi.
+ */
+function FocusToggle({
+  active,
+  className,
+  onToggle,
+}: {
+  active: boolean
+  className?: string
+  onToggle: () => void
+}) {
+  /**
+   * `Enter` shu tugmada TO'XTAYDI va `window` gacha yetmaydi.
+   *
+   * Sababi: `useTypingSession` `window` da o'tirib `Enter` ning brauzer
+   * xatti-harakatini to'xtatadi (`shouldPreventDefault`). Ya'ni fokus tugmada
+   * turganda `Enter` uni BOSMASDI — diqqat rejimidan klaviatura bilan
+   * chiqishning yagona yo'li yo'qolardi. Hodisa shu yerda to'xtatilsa
+   * `preventDefault()` umuman chaqirilmaydi va brauzer tugmani odatdagidek
+   * bosadi; seans esa bosishni ko'rmaydi — bu ham to'g'ri, foydalanuvchi
+   * tugmani bosdi, gapni tugatmadi.
+   *
+   * Probel ATAYIN o'tkazib yuboriladi: u mashqda haqiqiy belgi. Bu yerda tutib
+   * qolinsa, tugmada fokus qolgan foydalanuvchi probel bosganda matn o'rniga
+   * rejim almashardi (ilovadagi boshqa tugmalar ham xuddi shunday ishlaydi:
+   * fokus ularda tursa ham yozish davom etaveradi).
+   */
+  function onKeyDown(event: KeyboardEvent<HTMLButtonElement>): void {
+    if (event.key === 'Enter') event.stopPropagation()
+  }
+
+  // `aria-pressed` ATAYIN yo'q — yonidagi "Ovoz yoniq" tugmasidan farqli o'laroq.
+  // U yerda yozuv HOLATNI ataydi ("ovoz yoniq"), shuning uchun "bosilgan/bosilmagan"
+  // bilan bir yo'nalishda o'qiladi. Bu yerda esa tugma HARAKATNI ataydi va ikkovi
+  // qarama-qarshi chiqardi: ekran o'quvchi "Diqqat rejimidan chiqish, bosilgan"
+  // deb o'qib, foydalanuvchini chalg'itardi. Nomning o'zi nima bo'lishini to'liq
+  // aytadi (pleyerdagi "ijro"/"to'xtat" tugmasi kabi).
+
+  // Diqqat rejimida yozuv yo'q — faqat X. Rejimning butun mohiyati ekranda matndan
+  // boshqa hech narsa qolmasligi, matnli tugma esa aynan o'sha "boshqa narsa"
+  // bo'lardi. Nom shuning uchun ikki kanaldan beriladi:
+  //   `aria-label` — ekran o'quvchi uchun (SVG `aria-hidden`, ya'ni tugma usiz
+  //                  butunlay nomsiz qolardi);
+  //   `title`      — sichqoncha ushlab turilganda chiqadigan brauzer maslahati.
+  // Ikkovi bir xil matn: `title` yolg'iz o'zi ishonchli nom emas (ekran o'quvchilar
+  // uni har xil o'qiydi, klaviatura bilan esa umuman ko'rinmaydi).
+  if (active) {
+    return (
+      <Button
+        size="sm"
+        variant="ghost"
+        aria-label={EXIT_LABEL}
+        title={EXIT_LABEL}
+        // `px-0!` — `size="sm"` ning `px-3` i bilan bitta xossa uchun kurashadi va
+        // g'olibni sinf tartibi emas, uslublar jadvalidagi tartib hal qilardi.
+        // Muhimlik belgisi natijani mixlab qo'yadi: tugma 32x32 kvadrat bo'ladi.
+        className={`h-8 w-8 px-0! ${className ?? ''}`}
+        onClick={onToggle}
+        onKeyDown={onKeyDown}
+      >
+        {/* `stroke="currentColor"` — X tugmaning matn rangini oladi, ya'ni
+            `hover`/`focus` holatlarida u bilan birga yorishadi. */}
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 16 16"
+          className="h-3.5 w-3.5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        >
+          <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
+        </svg>
+      </Button>
+    )
+  }
+
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      className={className}
+      onClick={onToggle}
+      onKeyDown={onKeyDown}
+    >
+      Diqqat rejimi
+    </Button>
+  )
+}
+
 function NotFound({ message }: { message: string }) {
   useDocumentTitle('Topilmadi')
 
@@ -368,15 +578,242 @@ function Session({ lesson }: { lesson: Lesson }) {
   // Dars nomi eng oldinda: yorliq torayganda brauzer sarlavhaning OXIRINI kesadi.
   useDocumentTitle(`${title} — mashq`)
 
+  // ⭐ Diqqat rejimi: butun oynada faqat yozuv maydoni qoladi.
+  const [focusMode, setFocusMode] = useState(false)
+  /** Chiqish tugmasi ayni damda ko'rinib turibdimi (pastdagi izohga qarang). */
+  const [controlsVisible, setControlsVisible] = useState(false)
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const fieldRef = useRef<HTMLElement>(null)
+
+  /**
+   * Chiqish tugmasini ko'rsatadi va harakatsizlik taymerini qaytadan qo'yadi.
+   *
+   * Tugma DOIM ko'rinib tursa diqqat rejimi o'z ma'nosini yo'qotardi, butunlay
+   * yashirilsa esa sichqoncha bilan ishlaydigan foydalanuvchi rejimdan chiqish
+   * yo'lini topa olmasdi. Shuning uchun u video pleyer boshqaruvi kabi
+   * tutadi: sichqoncha qimirlasa chiqadi, `CONTROLS_IDLE_MS` dan keyin so'nadi.
+   * Klaviatura fokusi tushganda esa CSS (`focus-visible:opacity-100`) uni
+   * shu holatdan qat'i nazar ko'rsatadi — aks holda tugma fokusda bo'lib
+   * turib ko'rinmasdi.
+   */
+  const revealControls = useCallback((): void => {
+    setControlsVisible(true)
+    if (hideTimerRef.current !== null) clearTimeout(hideTimerRef.current)
+    hideTimerRef.current = setTimeout(() => {
+      hideTimerRef.current = null
+      setControlsVisible(false)
+    }, CONTROLS_IDLE_MS)
+  }, [])
+
+  /** Yozish boshlanishi bilan tugma darhol so'nadi — taymerni kutib turmaydi. */
+  const hideControls = useCallback((): void => {
+    if (hideTimerRef.current !== null) {
+      clearTimeout(hideTimerRef.current)
+      hideTimerRef.current = null
+    }
+    setControlsVisible(false)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (hideTimerRef.current !== null) clearTimeout(hideTimerRef.current)
+    }
+  }, [])
+
+  // Dialog FAQAT diqqat rejimida chiziladi, ya'ni bu effekt aynan rejimga
+  // kirganda ishga tushadi (aks holda `ref` bo'sh va effekt darhol qaytadi).
+  // Qatlam ochilishi bilan chiqish tugmasi bir marta ko'rsatiladi: rejimga
+  // endigina kirgan foydalanuvchi undan qanday chiqishni ko'rib qolsin.
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (dialog === null) return
+
+    // `showModal()` EMAS, `show()` — farqi `DIALOG` izohida tushuntirilgan.
+    // Tekshiruv `dialog` ni qo'llab-quvvatlamaydigan muhit uchun (masalan test
+    // muhitidagi DOM): u yerda atribut qo'lda qo'yiladi, ilova yiqilmaydi.
+    if (typeof dialog.show === 'function') dialog.show()
+    else dialog.open = true
+
+    // Ort fonni inert qilamiz. `<main>` ning O'ZI chetda qoladi: qatlam ham
+    // uning ichida. `Layout` dan qidirish `#asosiy` orqali — bu ID o'tkazib
+    // yuborish havolasining nishoni, ya'ni tasodifiy emas, kelishilgan nuqta.
+    // Topilmasa (Layout o'zgargan bo'lsa) rejim baribir ishlaydi, faqat
+    // ko'rinmay qolgan navigatsiya klaviatura uchun ochiq qoladi.
+    const main = dialog.closest('main')
+    const covered =
+      main === null || main.parentElement === null
+        ? []
+        : [...main.parentElement.children].filter((element) => element !== main)
+    for (const element of covered) element.setAttribute('inert', '')
+
+    // O'rnatilgan PWA oynasining sarlavha paneli (telefonda — brauzer manzil
+    // satri) `theme-color` dan bo'yaladi va Chrome uni JONLI kuzatadi. Diqqat
+    // rejimida qatlam butun oynani egallaydi, ya'ni panel ham shu rangda
+    // bo'lmasa tepada begona tasma qolib ketardi. Eski qiymat saqlanadi:
+    // rejimdan chiqilganda ilova o'z fon rangiga qaytadi.
+    const themeMeta = document.querySelector('meta[name="theme-color"]')
+    const previousTheme = themeMeta === null ? null : themeMeta.getAttribute('content')
+    themeMeta?.setAttribute('content', FOCUS_BG)
+
+    revealControls()
+    return () => {
+      for (const element of covered) element.removeAttribute('inert')
+      if (themeMeta !== null && previousTheme !== null) {
+        themeMeta.setAttribute('content', previousTheme)
+      }
+      if (dialog.open) dialog.close()
+    }
+  }, [focusMode, revealControls])
+
   // Ekran ochilishi bilan fokus mashq maydonida bo'lsin: usiz foydalanuvchi
   // qayerga yozishni bilmaydi, fokus halqasi esa faqat bosilgandan keyin
   // chiqadi. `preventScroll` SHART — usiz brauzer maydonni ko'rinishga tortib,
   // sahifani sakratib yuboradi. Seans `key={lesson.id}` bilan kalitlangani
-  // uchun bu bir martalik effekt boshqa darsga o'tilganda ham qayta ishlaydi.
-  const fieldRef = useRef<HTMLElement>(null)
+  // uchun bu effekt boshqa darsga o'tilganda ham qayta ishlaydi.
+  //
+  // Bog'liqlikda `focusMode` ham bor: rejim almashganda `<section>` DOM daraxtida
+  // BOSHQA joyga ko'chadi (qatlam ichiga va qaytib), ya'ni React eski tugunni
+  // yo'q qilib yangisini yasaydi va fokus `<body>` ga tushib qolardi. Effekt
+  // yuqoridagi dialog effektidan KEYIN e'lon qilingan — effektlar e'lon
+  // tartibida ishlaydi, `showModal()` esa fokusni qatlamdagi birinchi
+  // fokuslanadigan elementga (chiqish tugmasiga) ko'chirib qo'yadi.
   useEffect(() => {
     fieldRef.current?.focus({ preventScroll: true })
-  }, [])
+  }, [focusMode])
+
+  const field = (
+    // Yozuv maydoni. Bu yerda matn kiritish elementi YO'Q: hook `INPUT`,
+    // `TEXTAREA`, `SELECT` va `contenteditable` ustidagi bosishlarni o'ziga
+    // olmaydi, ya'ni maydon faqat shunday holatda ishlaydi.
+    //
+    // `tabIndex={0}` — maydon fokus olsin (fokus halqasi qayerda yozilayotganini
+    // ko'rsatadi). Mashq paytida oldinga `Tab` gapni qaytadan boshlaydi,
+    // shuning uchun bu yerga sichqoncha yoki `Shift+Tab` bilan kelinadi.
+    // `role`/`aria-label` esa ekran o'quvchisi uchun nomni beradi — nomsiz
+    // fokus nuqtasi "guruh" bo'lib o'qilardi.
+    <section
+      ref={fieldRef}
+      tabIndex={0}
+      role="region"
+      aria-label="Yozuv maydoni"
+      // Ikki rejim ikki xil ko'rinish: oddiy rejimda karta (atrofidagi HUD va
+      // boshqaruvlardan ajralib tursin), diqqat rejimida esa ramkasiz matn.
+      className={focusMode ? FIELD_FOCUS : FIELD_NORMAL}
+    >
+      <Sentence
+        state={state}
+        blocked={blocked}
+        sentenceNo={session.sentenceIndex + 1}
+        sentenceTotal={lesson.sentences.length}
+      />
+    </section>
+  )
+
+  const status = (
+    // Balandligi o'zgarmaydi — xabar almashganda ekran sakramasin. Tor
+    // ekranda `blocked` xabari ikki-uch qatorga yoyilib ~92px ga chiqadi,
+    // shuning uchun 54px faqat `sm` dan boshlab yetarli.
+    //
+    // Diqqat rejimida hudud KO'ZDAN yashiriladi, lekin o'chirilmaydi va
+    // qatlam ICHIDA qoladi. Ikki sabab: (1) bu "gap tugadi", "xato belgi" va
+    // "gap tashlandi" xabarlarining ekran o'quvchi uchun yagona manbai —
+    // `hidden`/`display:none` qo'yilsa jonli hudud butunlay jim bo'lardi;
+    // (2) modal dialog ortidagi hamma narsa inert, ya'ni qatlamdan TASHQARIDA
+    // qolgan jonli hudud baribir e'lon qilinmasdi.
+    <div
+      role="status"
+      aria-live="polite"
+      className={focusMode ? 'sr-only' : 'mt-3 min-h-23 sm:min-h-13.5'}
+    >
+      {awaitingNext ? (
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-control border border-[#5ee6c1]/40 bg-[#5ee6c1]/[0.07] px-4 py-3">
+          <span
+            aria-hidden="true"
+            className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[#5ee6c1] motion-reduce:animate-none"
+          />
+          <span className="font-mono text-[11px] font-medium tracking-[0.22em] text-[#5ee6c1] uppercase">
+            gap tugadi
+          </span>
+          <span className="font-mono text-[13px] text-[#c6d3de]">
+            Keyingi gapga o&apos;tish uchun <kbd className={KBD}>Enter</kbd> bosing.
+          </span>
+        </div>
+      ) : blocked !== null ? (
+        <>
+          <BlockedHint key={blocked.nonce} blocked={blocked} expected={expected} />
+          {/* Jonli hududdagi YAGONA o'qiladigan matn. Kalitlanmagan va
+              chaqnamaydi: ketma-ket bir xil xatoda matn o'zgarmaydi, ya'ni
+              DOM ham o'zgarmaydi va e'lon takrorlanmaydi. */}
+          <p className="sr-only">
+            {expected === undefined
+              ? 'Xato belgi bosildi.'
+              : `Xato belgi bosildi. Kutilgan belgi: ${keyName(expected)}`}
+          </p>
+        </>
+      ) : session.skipNotice ? (
+        <p className="px-1 py-3 font-mono text-[13px] text-[#e0cfa8]">
+          Gap tashlandi — dars oxirida qaytadi.
+        </p>
+      ) : (
+        <p className="px-1 py-3 font-mono text-[13px] text-[#7d8b9c]">
+          {/* Ilgari bu yerda "Eshitgan so'zingizni yozing" turardi — mexanikani
+              TESKARI tushuntirardi: so'z eshitilgani uchun yozilmaydi, aksincha
+              birinchi harfi yozilgani uchun eshitiladi (`core/typing.ts`).
+              Matn qasddan qisqa: bu hudud balandligi mixlangan (yuqoriga
+              qarang) va uzun ko'rsatma ikkinchi qatorga tushib, xabar
+              almashganda ekranni sakratardi. */}
+          Har so&apos;zning birinchi harfini yozganda o&apos;sha so&apos;z bir marta
+          o&apos;qiladi. <kbd className={KBD}>Ctrl+Space</kbd> — qaytarish.
+        </p>
+      )}
+    </div>
+  )
+
+  if (focusMode) {
+    return (
+      // `onKeyDown` va `onPointerMove` — element darajasidagi tinglovchilar,
+      // `window` ga hech narsa qo'shilmaydi (fayl boshidagi qoida). Ular
+      // hodisani na to'xtatadi, na bekor qiladi: seans ularni odatdagidek
+      // `window` da qabul qilaveradi.
+      <dialog
+        ref={dialogRef}
+        aria-label="Diqqat rejimi"
+        className={DIALOG}
+        onPointerMove={revealControls}
+        onKeyDown={hideControls}
+        onCancel={(event) => {
+          // `Escape` bu ilovada GAPNI TASHLASH tugmasi (PLAN §4). Brauzerning
+          // "Escape — dialogni yop" xatti-harakati qoldirilsa, bitta bosish
+          // ikki ishni birdan qilardi: gap tashlanib, ustiga rejimdan ham
+          // chiqilardi. Rejimdan faqat tugma orqali chiqiladi.
+          //
+          // Spetsifikatsiya bo'yicha bu hodisa MODAL dialogda chiqadi, biznikisi
+          // esa modalsiz (`show()`), ya'ni amalda chaqirilmasligi kerak.
+          // Qoldirildi: qoida o'zgarsa yoki brauzer boshqacha qilsa, qatlam
+          // jimgina yopilib ketmasligi kerak.
+          event.preventDefault()
+        }}
+      >
+        {/* Maydon qatlamning BEVOSITA bolasi: oraliq o'ram bo'lsa uning
+            padding'i ham 30px lik yig'indiga qo'shilardi. */}
+        {field}
+        {status}
+        <FocusToggle
+          active
+          className={[
+            'fixed top-4 right-4 z-10',
+            'transition-opacity duration-200 ease-out motion-reduce:transition-none',
+            'focus-visible:opacity-100',
+            controlsVisible ? 'opacity-100' : 'opacity-0',
+          ].join(' ')}
+          onToggle={() => {
+            setFocusMode(false)
+          }}
+        />
+      </dialog>
+    )
+  }
 
   return (
     // Tashqi o'ram `Layout` ning 1152px ini oladi: `max-w-5xl` bu yerda turganda
@@ -476,76 +913,9 @@ function Session({ lesson }: { lesson: Lesson }) {
         </div>
       </section>
 
-      {/* Yozuv maydoni. Bu yerda matn kiritish elementi YO'Q: hook `INPUT`,
-          `TEXTAREA`, `SELECT` va `contenteditable` ustidagi bosishlarni o'ziga
-          olmaydi, ya'ni maydon faqat shunday holatda ishlaydi.
+      {field}
 
-          `tabIndex={0}` — maydon fokus olsin (fokus halqasi qayerda yozilayotganini
-          ko'rsatadi). Mashq paytida oldinga `Tab` gapni qaytadan boshlaydi,
-          shuning uchun bu yerga sichqoncha yoki `Shift+Tab` bilan kelinadi.
-          `role`/`aria-label` esa ekran o'quvchisi uchun nomni beradi — nomsiz
-          fokus nuqtasi "guruh" bo'lib o'qilardi. */}
-      <section
-        ref={fieldRef}
-        tabIndex={0}
-        role="region"
-        aria-label="Yozuv maydoni"
-        className={`${PANEL} mx-auto mt-4 max-w-5xl p-6 focus-visible:ring-2 focus-visible:ring-[#5ee6c1] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f14] focus-visible:outline-none sm:p-8`}
-      >
-        <Sentence
-          state={state}
-          blocked={blocked}
-          sentenceNo={session.sentenceIndex + 1}
-          sentenceTotal={lesson.sentences.length}
-        />
-      </section>
-
-      {/* Balandligi o'zgarmaydi — xabar almashganda ekran sakramasin. Tor
-          ekranda `blocked` xabari ikki-uch qatorga yoyilib ~92px ga chiqadi,
-          shuning uchun 54px faqat `sm` dan boshlab yetarli. */}
-      <div role="status" aria-live="polite" className="mt-3 min-h-23 sm:min-h-13.5">
-        {awaitingNext ? (
-          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-control border border-[#5ee6c1]/40 bg-[#5ee6c1]/[0.07] px-4 py-3">
-            <span
-              aria-hidden="true"
-              className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[#5ee6c1] motion-reduce:animate-none"
-            />
-            <span className="font-mono text-[11px] font-medium tracking-[0.22em] text-[#5ee6c1] uppercase">
-              gap tugadi
-            </span>
-            <span className="font-mono text-[13px] text-[#c6d3de]">
-              Keyingi gapga o&apos;tish uchun <kbd className={KBD}>Enter</kbd> bosing.
-            </span>
-          </div>
-        ) : blocked !== null ? (
-          <>
-            <BlockedHint key={blocked.nonce} blocked={blocked} expected={expected} />
-            {/* Jonli hududdagi YAGONA o'qiladigan matn. Kalitlanmagan va
-                chaqnamaydi: ketma-ket bir xil xatoda matn o'zgarmaydi, ya'ni
-                DOM ham o'zgarmaydi va e'lon takrorlanmaydi. */}
-            <p className="sr-only">
-              {expected === undefined
-                ? 'Xato belgi bosildi.'
-                : `Xato belgi bosildi. Kutilgan belgi: ${keyName(expected)}`}
-            </p>
-          </>
-        ) : session.skipNotice ? (
-          <p className="px-1 py-3 font-mono text-[13px] text-[#e0cfa8]">
-            Gap tashlandi — dars oxirida qaytadi.
-          </p>
-        ) : (
-          <p className="px-1 py-3 font-mono text-[13px] text-[#7d8b9c]">
-            {/* Ilgari bu yerda "Eshitgan so'zingizni yozing" turardi — mexanikani
-                TESKARI tushuntirardi: so'z eshitilgani uchun yozilmaydi, aksincha
-                birinchi harfi yozilgani uchun eshitiladi (`core/typing.ts`).
-                Matn qasddan qisqa: bu hudud balandligi mixlangan (yuqoriga
-                qarang) va uzun ko'rsatma ikkinchi qatorga tushib, xabar
-                almashganda ekranni sakratardi. */}
-            Har so&apos;zning birinchi harfini yozganda o&apos;sha so&apos;z bir marta
-            o&apos;qiladi. <kbd className={KBD}>Ctrl+Space</kbd> — qaytarish.
-          </p>
-        )}
-      </div>
+      {status}
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
         <div className="flex flex-wrap items-center gap-2.5">
@@ -582,6 +952,16 @@ function Session({ lesson }: { lesson: Lesson }) {
           >
             So&apos;zni qaytarish
           </Button>
+
+          {/* Butun oynani yozuv maydoniga topshiradi. Seansga TEGMAYDI: taymer
+              yurishda davom etadi, ovoz va statistika o'zgarmaydi — bu faqat
+              ko'rinish rejimi (fayl boshidagi izohga qarang). */}
+          <FocusToggle
+            active={false}
+            onToggle={() => {
+              setFocusMode(true)
+            }}
+          />
 
           {/* Umumiy `ServerBanner` ulanish yo'qligini aytadi; bu belgi esa
               ayni damda QAYSI ovoz eshitilayotganini tugmaning yonida ko'rsatadi. */}
