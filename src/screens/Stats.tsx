@@ -24,6 +24,9 @@ import {
   corruptLessonsBackup,
   discardCorruptLessonsBackup,
   discardUnknownLessons,
+  exportLessonsJson,
+  importLessonsJson,
+  listLessons,
   unknownLessonCount,
 } from '../store/lessons.ts'
 import {
@@ -154,6 +157,18 @@ function readSnapshot(): Snapshot {
   }
 }
 
+/**
+ * Fayl tanlash oynasi qaysi ombor uchun ochilgan. Ekranda YAGONA `<input
+ * type="file">` bor va u ikkala importga xizmat qiladi — shuning uchun tanlangan
+ * faylni kim qabul qilishini aynan shu bayroq hal qiladi.
+ */
+type ImportTarget = 'stats' | 'lessons'
+
+/** Eksport tugmasini o'chirish uchun: darsi yo'q omborni "zaxira qilish" ma'nosiz. */
+function countLessons(): number {
+  return listLessons().length
+}
+
 function hasHistory(stats: StatsData): boolean {
   return (
     stats.sessions.length > 0 ||
@@ -183,6 +198,40 @@ function downloadText(text: string, filename: string, mime: string): void {
 
 function downloadJson(): void {
   downloadText(exportJson(), `dnt-stats-${stamp(new Date())}.json`, 'application/json;charset=utf-8')
+}
+
+/**
+ * Darslar zaxirasi ALOHIDA fayl bo'lib tushadi (`dnt-lessons-…`).
+ *
+ * Ikkovini bitta faylga qo'shish mumkin edi, lekin ular bir xil qoidaga
+ * bo'ysunmaydi: statistika importi ALMASHTIRADI, darslar importi esa
+ * BIRLASHTIRADI (`lessons.importLessonsJson`). Bitta fayl foydalanuvchiga
+ * bitta tugma ko'rsatib, ichida ikki xil ish qilardi — shuning uchun fayl ham,
+ * tugma ham ikkita.
+ */
+function downloadLessons(): void {
+  downloadText(
+    exportLessonsJson(),
+    `dnt-lessons-${stamp(new Date())}.json`,
+    'application/json;charset=utf-8',
+  )
+}
+
+/**
+ * Darslar importining natijasi — SONLAR bilan.
+ *
+ * "Tiklandi" degan quruq xabar bu yerda yetarli emas: import birlashtiradi,
+ * ya'ni fayl allaqachon mavjud darslarni takrorlashi mumkin. Nechtasi yangi,
+ * nechtasi ustiga yozilgani — foydalanuvchining to'g'ri faylni tanlaganini
+ * tekshiradigan yagona belgisi.
+ *
+ * Ikkovi bir vaqtda nol bo'lolmaydi: bunday holat importdan XATO qaytaradi.
+ */
+function describeLessonsImport(added: number, updated: number): string {
+  const parts: string[] = []
+  if (added > 0) parts.push(`${added} ta dars qo'shildi`)
+  if (updated > 0) parts.push(added > 0 ? `${updated} tasi yangilandi` : `${updated} ta dars yangilandi`)
+  return `${parts.join(', ')}.`
 }
 
 // ---------------------------------------------------------------------------
@@ -274,13 +323,14 @@ export function Stats() {
   // kerak, render ichidagi to'g'ridan-to'g'ri chaqiriq esa buni qilmaydi.
   const [snapshot, setSnapshot] = useState<Snapshot>(readSnapshot)
   const [range, setRange] = useState<number>(RANGES[0])
-  const [importArmed, setImportArmed] = useState(false)
+  const [importArmed, setImportArmed] = useState<ImportTarget | null>(null)
   const [clearArmed, setClearArmed] = useState(false)
   const [message, setMessage] = useState<Message | null>(null)
   const [damaged, setDamaged] = useState<Damaged[]>(readDamaged)
   const [damagedArmed, setDamagedArmed] = useState<Damaged | null>(null)
   const [junk, setJunk] = useState<number>(unknownLessonCount)
   const [junkArmed, setJunkArmed] = useState(false)
+  const [lessonCount, setLessonCount] = useState<number>(countLessons)
   const fileRef = useRef<HTMLInputElement | null>(null)
 
   const series = useMemo(() => dailySeries(range), [range, snapshot])
@@ -293,7 +343,7 @@ export function Stats() {
   const filled = hasHistory(snapshot.stats)
   const activeDays = series.filter((point) => point.correctKeystrokes >= STREAK_MIN_CORRECT).length
 
-  async function applyFile(file: File): Promise<void> {
+  async function applyFile(target: ImportTarget, file: File): Promise<void> {
     let raw = ''
     try {
       raw = await file.text()
@@ -302,18 +352,36 @@ export function Stats() {
       return
     }
 
-    const result = importJson(raw)
+    // Ikki ombor ikki xil natija shakli qaytaradi (darslar importi nechta yozuv
+    // qo'shilgan-yangilanganini ham beradi), shuning uchun tarmoqlar alohida.
+    if (target === 'stats') {
+      const result = importJson(raw)
+      if (!result.ok) {
+        setMessage({ kind: 'error', text: result.error })
+        return
+      }
+      setSnapshot(readSnapshot())
+      // Import — buzuq payloadni yo'q qiladigan yozuv bo'lishi mumkin, ya'ni aynan
+      // shu chaqiruq yangi zaxira yaratgan bo'lishi ehtimoli bor (`importJson`).
+      setDamaged(readDamaged())
+      setImportArmed(null)
+      setMessage({ kind: 'ok', text: 'Statistika fayldan tiklandi.' })
+      return
+    }
+
+    const result = importLessonsJson(raw)
     if (!result.ok) {
       setMessage({ kind: 'error', text: result.error })
       return
     }
-
-    setSnapshot(readSnapshot())
-    // Import — buzuq payloadni yo'q qiladigan yozuv bo'lishi mumkin, ya'ni aynan
-    // shu chaqiruq yangi zaxira yaratgan bo'lishi ehtimoli bor (`importJson`).
+    setLessonCount(countLessons())
+    // Darslar omboriga yozish tanib bo'lmaydigan yozuvlar sonini o'zgartirishi
+    // mumkin: buzuq payload zaxiraga ko'chsa, ular bilan birga o'sha satr ham
+    // ombordan chiqib ketadi (`readStored` → `backupCorrupt`).
+    setJunk(unknownLessonCount())
     setDamaged(readDamaged())
-    setImportArmed(false)
-    setMessage({ kind: 'ok', text: 'Statistika fayldan tiklandi.' })
+    setImportArmed(null)
+    setMessage({ kind: 'ok', text: describeLessonsImport(result.added, result.updated) })
   }
 
   function handleFile(event: ChangeEvent<HTMLInputElement>): void {
@@ -322,8 +390,8 @@ export function Stats() {
     // Qiymat darhol tozalanadi: aks holda AYNAN o'sha faylni ikkinchi marta
     // tanlaganda `change` hodisasi umuman chiqmaydi va tugma "o'lik" ko'rinadi.
     input.value = ''
-    if (file === undefined) return
-    void applyFile(file)
+    if (file === undefined || importArmed === null) return
+    void applyFile(importArmed, file)
   }
 
   function handleClear(): void {
@@ -342,6 +410,13 @@ export function Stats() {
     setDamaged(readDamaged())
     setDamagedArmed(null)
     setMessage({ kind: 'ok', text: `Buzuq nusxa o'chirildi (${row.store}).` })
+  }
+
+  /** Ikki import tugmasi uchun bitta yo'l: qarama-qarshi panellar bir vaqtda ochilmaydi. */
+  function armImport(target: ImportTarget): void {
+    setMessage(null)
+    setClearArmed(false)
+    setImportArmed(target)
   }
 
   function handleDiscardJunk(): void {
@@ -650,6 +725,15 @@ export function Stats() {
           data&raquo; oylab yig&apos;ilgan xato-so&apos;z tarixini o&apos;chirib yuboradi. JSON
           fayl — yagona nusxasi.
         </p>
+        {/* Ikkita fayl kerakligini aytib qo'yish SHART: statistika zaxirasi seanslarni
+            saqlaydi, lekin ular ishora qiladigan darslarni emas. Yolg'iz statistika bilan
+            tiklangan brauzerda o'sha seanslar mavjud bo'lmagan darsga qarab qoladi —
+            pastdagi "yaroqsiz yozuvlar" bloki aynan shunday paydo bo'ladi. */}
+        <p className={`${NOTE} mt-2`}>
+          Darslar va statistika ALOHIDA saqlanadi, shuning uchun to&apos;liq zaxira uchun
+          ikkala fayl ham kerak: statistika seanslarni saqlaydi, lekin ular tegishli
+          bo&apos;lgan matnlarni emas.
+        </p>
 
         {damaged.map((row) => (
           <div key={row.id} className="mt-4 rounded-control border border-[#3a3520] bg-[#15130d] p-4">
@@ -733,31 +817,54 @@ export function Stats() {
           </div>
         ) : null}
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button variant="ghost" onClick={downloadJson} disabled={!filled}>
-            JSON eksport
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setMessage(null)
-              setClearArmed(false)
-              setImportArmed(true)
-            }}
-          >
-            JSON import
-          </Button>
-          <Button
-            variant="danger"
-            onClick={() => {
-              setMessage(null)
-              setImportArmed(false)
-              setClearArmed(true)
-            }}
-            disabled={!filled}
-          >
-            Hammasini o&apos;chirish
-          </Button>
+        {/* Ikki ombor — ikki guruh. Beshta tugmani bitta qatorga yig'ish "JSON
+            eksport" yozuvini ikki marta takrorlab, qaysi biri nimani saqlashini
+            faqat tartibga tashlab qo'yardi. Sarlavha esa buni har bir tugma
+            uchun aytib turadi va "Hammasini o'chirish" ning FAQAT statistikaga
+            tegishi ham shu guruhlash orqali ko'rinadi. */}
+        <div className="mt-4 space-y-4">
+          <div>
+            <div className={LABEL}>statistika</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button variant="ghost" onClick={downloadJson} disabled={!filled}>
+                JSON eksport
+              </Button>
+              <Button variant="ghost" onClick={() => armImport('stats')}>
+                JSON import
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  setMessage(null)
+                  setImportArmed(null)
+                  setClearArmed(true)
+                }}
+                disabled={!filled}
+              >
+                Hammasini o&apos;chirish
+              </Button>
+            </div>
+          </div>
+
+          <div>
+            <div className={LABEL}>darslar</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button variant="ghost" onClick={downloadLessons} disabled={lessonCount === 0}>
+                JSON eksport
+              </Button>
+              <Button variant="ghost" onClick={() => armImport('lessons')}>
+                JSON import
+              </Button>
+            </div>
+            {/* Dars kartasidagi `.txt` eksport BOSHQA ish qiladi va ikkovini
+                chalkashtirish oson: u tashqi `tts.sh` quvuriga matn beradi,
+                progress va ta'kidlashni esa tashlab yuboradi. */}
+            <p className={`${NOTE} mt-2`}>
+              Bu fayl darsning butun holatini saqlaydi: matn, progress, tashlangan gaplar,
+              ta&apos;kidlash, ovoz va tezlik. Dars kartasidagi &laquo;.txt eksport&raquo; esa
+              faqat gaplar matnini beradi — u tashqi quvur uchun, zaxira uchun emas.
+            </p>
+          </div>
         </div>
 
         <input
@@ -768,7 +875,7 @@ export function Stats() {
           onChange={handleFile}
         />
 
-        {importArmed ? (
+        {importArmed === 'stats' ? (
           <div className="mt-4 rounded-control border border-[#3a3520] bg-[#15130d] p-4">
             {/* Import BIRLASHTIRMAYDI, ALMASHTIRADI — `stats.ts` dagi izohda sababi: aks
                 holda bitta faylni ikki marta import qilish yig'indilarni ikkilantirardi.
@@ -783,7 +890,31 @@ export function Stats() {
               <Button variant="primary" size="sm" onClick={() => fileRef.current?.click()}>
                 Fayl tanlash
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setImportArmed(false)}>
+              <Button variant="ghost" size="sm" onClick={() => setImportArmed(null)}>
+                Bekor qilish
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {importArmed === 'lessons' ? (
+          <div className="mt-4 rounded-control border border-[#22303d] bg-[#0b0f14] p-4">
+            {/* Rang ATAYIN sariq emas: statistika importidan farqli o'laroq bu yerda
+                yo'qoladigan narsa yo'q — birlashtirish qoidasi va sababi
+                `lessons.importLessonsJson` da yozilgan. Panel baribir ko'rsatiladi,
+                chunki "import" so'zi yuqoridagi tugmadan keyin almashtirishni
+                kutishga o'rgatib qo'ygan bo'lishi mumkin. */}
+            <p className={NOTE}>
+              Import mavjud darslarni SAQLAB QOLADI: fayldagi yangi darslar qo&apos;shiladi,
+              allaqachon bor darsning mazmuni esa fayldagisi bilan yangilanadi. Progress
+              orqaga surilmaydi — shu brauzerdagi dars uzoqroq o&apos;qilgan bo&apos;lsa,
+              o&apos;sha holat qoladi.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button variant="primary" size="sm" onClick={() => fileRef.current?.click()}>
+                Fayl tanlash
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setImportArmed(null)}>
                 Bekor qilish
               </Button>
             </div>

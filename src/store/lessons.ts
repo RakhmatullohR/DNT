@@ -367,18 +367,26 @@ function readAll(): Lesson[] {
   return readStored().lessons
 }
 
-function writeAll(lessons: Lesson[], unknown: unknown[]): void {
+/**
+ * Natija — YOZILDIMI degan javob. Mashq yo'llari (`setProgress`,
+ * `completeSentence`) uni ATAYIN e'tiborsiz qoldiradi: ular uchun yiqilmaslik
+ * muhimroq. Import esa aksincha — javobsiz u kvota to'lganda ham
+ * "tiklandi" deb xabar berardi (`importLessonsJson`).
+ */
+function writeAll(lessons: Lesson[], unknown: unknown[]): boolean {
   const store = getStore()
-  if (store === null) return
+  if (store === null) return false
 
   // Parser tanimagan yozuvlar oxiriga qo'shiladi: ular ro'yxatga chiqmaydi,
   // lekin keyingi saqlash ularni o'chirib yubormaydi.
   const payload: unknown[] = unknown.length === 0 ? lessons : [...lessons, ...unknown]
   try {
     store.setItem(LESSONS_KEY, JSON.stringify(payload))
+    return true
   } catch {
     // Kvota to'lgan yoki yozish taqiqlangan. Yiqilmaymiz — mashqni davom
     // ettirish saqlashdan muhimroq; foydalanuvchi faqat progressni yo'qotadi.
+    return false
   }
 }
 
@@ -520,4 +528,145 @@ export function newLessonId(): string {
   const time = Date.now().toString(36)
   const random = Math.random().toString(36).slice(2, 10)
   return `l-${time}-${random}`
+}
+
+// ---------------------------------------------------------------------------
+// Eksport / import — statistika zaxirasining (PLAN §6) darslar uchun juftligi
+// ---------------------------------------------------------------------------
+
+/**
+ * Zaxira faylining shakli.
+ *
+ * `version` — SHU FAYLNIKI, ombornikidan alohida: diskda darslar sarlavhasiz
+ * massiv bo'lib yotadi (`LESSONS_KEY`). Fayl esa o'zini tanitishi kerak, aks
+ * holda u statistika zaxirasi bilan bir xil ko'rinardi va ikkovi bitta "zaxira"
+ * bo'limidan tanlanadi — noto'g'ri fayl jimgina rad etilishi emas, SABABI bilan
+ * rad etilishi kerak.
+ *
+ * `kind` esa `version` yolg'iz hal qila olmaydigan narsani hal qiladi: ikkala
+ * faylda ham `version: 1` turadi, ya'ni farqni faqat maydonlar nomi ko'rsatadi.
+ */
+type LessonsFile = { version: 1; kind: 'lessons'; lessons: Lesson[] }
+
+/** Zaxira uchun o'qish mumkin bo'lgan JSON (2 probel chekinish, `stats.exportJson` bilan bir xil). */
+export function exportLessonsJson(): string {
+  const file: LessonsFile = { version: 1, kind: 'lessons', lessons: listLessons() }
+  return JSON.stringify(file, null, 2)
+}
+
+/**
+ * Fayl ildizidan dars yozuvlari massivini ajratadi.
+ *
+ * Sarlavhasiz MASSIV ham qabul qilinadi va bu ataylab: ombor formatining O'ZI
+ * shunday, ya'ni buzuq nusxa sifatida yuklab olingan `.txt`
+ * (`corruptLessonsBackup`) aynan shu ko'rinishda bo'ladi. Uni qo'lda tuzatib
+ * qaytadan yuklash — tiklashning eng ehtimolli yo'li, shuning uchun uni envelope
+ * yozishga majburlash tiklashni qiyinlashtirardi.
+ */
+function readFileRows(parsed: unknown): { ok: true; rows: unknown[] } | { ok: false; error: string } {
+  if (Array.isArray(parsed)) return { ok: true, rows: parsed }
+  if (!isRecord(parsed)) {
+    return { ok: false, error: 'Fayl formati noto\'g\'ri: JSON obyekti yoki massivi kutilgan edi.' }
+  }
+  if (parsed['version'] !== 1) {
+    return { ok: false, error: 'Qo\'llab-quvvatlanmaydigan versiya: `version: 1` kutilgan edi.' }
+  }
+  const rows = parsed['lessons']
+  if (!Array.isArray(rows)) {
+    return {
+      ok: false,
+      error: '`lessons` maydoni massiv bo\'lishi shart — bu statistika zaxirasi emasmi?',
+    }
+  }
+  return { ok: true, rows }
+}
+
+/**
+ * Bir xil `id` uchrasa nima qilinadi.
+ *
+ * MAZMUN fayldagidan olinadi — bu tiklash, fayl shu dars uchun manba.
+ *
+ * PROGRESS esa ORQAGA SURILMAYDI: `completeSentence` dagi bilan bir xil qoida.
+ * Dushanba kuni eksport qilib, hafta davomida mashq qilib, juma kuni o'sha eski
+ * faylni adashib import qilish — real ssenariy, va oddiy almashtirish bir
+ * haftalik progressni jimgina yo'q qilardi. Toza omborga tiklashda esa bu qoida
+ * hech narsani o'zgartirmaydi: solishtiradigan saqlangan yozuv yo'q.
+ *
+ * `skipped` progress bilan BIRGA yuradi: tashlangan gaplar ro'yxati aynan o'sha
+ * progressni hosil qilgan o'tish yo'lining bir qismi. Ilgarilagan yozuvning
+ * progressini olib, orqadagi yozuvning tashlanganlarini olish ikkovini ham
+ * yolg'on holatga qo'yardi.
+ *
+ * Chegara fayldagi gaplar soni bo'yicha qaytadan tekshiriladi: saqlangan dars
+ * uzunroq bo'lsa, uning progressi yangi matnga sig'masligi mumkin.
+ */
+function mergeLesson(stored: Lesson, incoming: Lesson): Lesson {
+  const total = incoming.sentences.length
+  const kept = clampProgress(stored.progress, total)
+  if (kept <= incoming.progress) return incoming
+  return { ...incoming, progress: kept, skipped: toSkipped(stored.skipped, total) }
+}
+
+export type LessonsImportResult =
+  | { ok: true; added: number; updated: number }
+  | { ok: false; error: string }
+
+/**
+ * Zaxiradan tiklaydi. Statistikadan FARQLI o'laroq bu BIRLASHTIRISH, almashtirish
+ * emas — va farqning sababi ikkala omborning tabiatida:
+ *
+ * - Statistika yig'indilardan iborat, shuning uchun birlashtirish ikki marta
+ *   import qilinganda ularni ikkilantirardi (`stats.importJson`).
+ * - Darslar esa turg'un `id` ga ega YAKKA obyektlar. Bir xil faylni ikki marta
+ *   import qilish aynan bir xil natija beradi, ya'ni birlashtirish idempotent.
+ *   Almashtirish esa aksincha ZARARLI bo'lardi: boshqa brauzerdan bitta darsni
+ *   olib kelish shu yerda yaratilgan hamma darsni o'chirib yuborardi.
+ *
+ * Fayldagi tanib bo'lmaydigan YAKKA yozuv tashlanadi (`toLesson` qoidasi), lekin
+ * hech biri o'qilmasa — xato: hech narsa qo'shmagan importni "tiklandi" deb
+ * xabar qilish tiklashning ma'nosini buzardi.
+ *
+ * Xato qaytganda ombor O'ZGARMAYDI: yozish faqat oxirida, bir marta bajariladi.
+ */
+export function importLessonsJson(raw: string): LessonsImportResult {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return { ok: false, error: 'Faylni JSON sifatida o\'qib bo\'lmadi.' }
+  }
+
+  const file = readFileRows(parsed)
+  if (!file.ok) return { ok: false, error: file.error }
+
+  // Import ham buzuq payloadni bosib ketadigan birinchi yozuv bo'lishi mumkin —
+  // `readStored` o'sha satrni zaxiraga ko'chirib ulguradi (`backupCorrupt`).
+  const stored = readStored()
+  const lessons = stored.lessons
+
+  let added = 0
+  let updated = 0
+  for (const row of file.rows) {
+    const incoming = toLesson(row)
+    if (incoming === null) continue
+
+    const index = lessons.findIndex((item) => item.id === incoming.id)
+    const current = index >= 0 ? lessons[index] : undefined
+    if (current === undefined) {
+      lessons.push(incoming)
+      added += 1
+    } else {
+      lessons[index] = mergeLesson(current, incoming)
+      updated += 1
+    }
+  }
+
+  if (added === 0 && updated === 0) {
+    return { ok: false, error: 'Faylda o\'qib bo\'ladigan dars topilmadi.' }
+  }
+
+  if (!writeAll(lessons, stored.unknown)) {
+    return { ok: false, error: 'Yozib bo\'lmadi: brauzer xotirasi to\'lgan bo\'lishi mumkin.' }
+  }
+  return { ok: true, added, updated }
 }

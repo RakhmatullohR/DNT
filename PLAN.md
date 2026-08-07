@@ -105,7 +105,7 @@ dictation-and-typing/
 │   │   └── webSpeech.ts    # speechSynthesis zaxirasi
 │   ├── hooks/
 │   │   └── useTypingSession.ts  # klaviatura -> reducer -> audio -> statistika -> marshrut
-│   ├── store/              # localStorage: lessons.ts, stats.ts (+ JSON eksport)
+│   ├── store/              # localStorage: lessons.ts, stats.ts (ikkovida ham JSON eksport/import)
 │   ├── screens/            # Home, Import, Practice, Results, Stats
 │   └── components/
 │       ├── Layout.tsx      # umumiy ramka + ServerBanner
@@ -748,6 +748,7 @@ ular uchun qo'lda E2E bor.
 - **Bu "dictation" emas.** Eshitib-yozish emas, imlo↔talaffuz bog'lanishi mashq qilinadi — o'zbek tilida imlo deyarli fonematik, ingliz tilida esa yo'q, shuning uchun qiymati bor, lekin **tinglab tushunish o'rgatilmaydi**. Bog'langan nutq uchun mavjud `noji/phrasal-verbs/tts.sh` quvuri ishlatilaveradi. Yumshatish yetkazilgan: gaplarni `.txt` qilib yuklab olish tugmasi bor — lekin **Bosh sahifadagi dars kartasida**, mashq ekranida emas (reja joyni noto'g'ri aytgan edi; mashq ekranidan qidirgan odam topmaydi).
 - **Alohida sintez = lug'aviy (citation) talaffuz.** `of` → to'liq /ʌv/, tabiiy nutqdagi /əv/ emas; `a` → /eɪ/, /ə/ emas. Bu tuzatib bo'lmaydigan cheklov, faqat bilib turish kerak.
 - **`edge-tts` — norasmiy Microsoft endpoint.** Yumshatish: disk keshi, `speechSynthesis` zaxirasi, parallellik ≤4, timeout, retry.
-- **`localStorage` — yagona nusxa.** Bitta "clear browsing data" oylik tarixni o'chiradi; ikkita ochiq tab oxirgi yozganini g'olib qiladi. Yumshatish yetkazilgan: JSON eksport/import, buzuq payloadni alohida kalitga ko'chirib tiklash (§6b), va `audio-words/` uchun `tar` zaxirasi — buyruqlari README da.
+- **`localStorage` — yagona nusxa.** Bitta "clear browsing data" oylik tarixni o'chiradi; ikkita ochiq tab oxirgi yozganini g'olib qiladi. Yumshatish yetkazilgan: **ikkala** ombor uchun JSON eksport/import (statistika VA darslar — pastdagi bandga qarang), buzuq payloadni alohida kalitga ko'chirib tiklash (§6b), va `audio-words/` uchun `tar` zaxirasi — buyruqlari README da.
+- **Darslar zaxirasi — statistikanikidan KEYIN qo'shilgan va boshqa qoida bilan ishlaydi.** M4 da faqat statistika zaxiralanardi, chunki himoya qilinayotgan narsa qayta tiklab bo'lmaydigan xato-so'z tarixi edi; dars esa "matnni yana paste qilasiz" deb hisoblangan. Bu ikki sababdan yetarli emas: (1) `.txt` eksport tashqi `tts.sh` quvuri uchun va progressni, tashlangan gaplarni, ta'kidlashni, ovoz/tezlikni tashlab yuboradi; (2) statistika zaxirasi seanslarni saqlaydi, lekin ular ishora qiladigan darslarni emas — toza brauzerda tiklangan seanslar aynan shu sababdan `unknownLessons` bo'lib qolardi. Import qoidasi ham teskari: statistika ALMASHTIRADI (yig'indilar ikkilanmasin), darslar esa BIRLASHTIRADI (turg'un `id` li yakka obyekt, ya'ni takroriy import idempotent) va progressni ORQAGA SURMAYDI.
 - **`shared/` ikki toolchain ostida.** Kelishmasa kesh hech qachon urmaydi. Xatar o'sdi: endi bu bitta emas, **ikkita** fayl — `filename.ts` va `overrides.ts`. Yumshatish ikkalasi uchun bir xil: aniq `.ts` kengaytmasi, hech qanday import atributi, testlar bilan qoplangan.
 - **Mobil klaviatura/IME**: v1 `window.keydown` ga tayanadi, telefonda ishonchli emas.

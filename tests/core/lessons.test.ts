@@ -12,7 +12,9 @@ import {
   deleteLesson,
   discardCorruptLessonsBackup,
   discardUnknownLessons,
+  exportLessonsJson,
   getLesson,
+  importLessonsJson,
   listLessons,
   newLessonId,
   saveLesson,
@@ -909,5 +911,264 @@ describe('newLessonId', () => {
     const id = newLessonId()
 
     expect(id.startsWith('l-')).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Eksport / import (PLAN §10 dagi "yagona nusxa" cheklovining darslar tomoni)
+// ---------------------------------------------------------------------------
+
+describe('exportLessonsJson', () => {
+  it("o'zini tanitadigan envelope qaytaradi", () => {
+    saveLesson(makeLesson())
+
+    const parsed: unknown = JSON.parse(exportLessonsJson())
+
+    // `kind` SHART: statistika zaxirasida ham `version: 1` turadi, ya'ni ikki
+    // faylni bir-biridan faqat maydonlar farqlaydi.
+    expect(parsed).toMatchObject({ version: 1, kind: 'lessons' })
+    expect((parsed as { lessons: unknown[] }).lessons).toHaveLength(1)
+  })
+
+  it("bo'sh omborda ham yaroqli fayl beradi", () => {
+    const parsed = JSON.parse(exportLessonsJson()) as { lessons: unknown[] }
+
+    expect(parsed.lessons).toEqual([])
+  })
+
+  it("darsning BUTUN holatini saqlaydi — `.txt` eksportdan farqi shu", () => {
+    saveLesson(
+      makeLesson({
+        progress: 1,
+        skipped: [0],
+        emphasis: [[{ start: 4, end: 7 }], []],
+      }),
+    )
+
+    const file = JSON.parse(exportLessonsJson()) as { lessons: Lesson[] }
+    const lesson = file.lessons[0]
+
+    expect(lesson?.progress).toBe(1)
+    expect(lesson?.skipped).toEqual([0])
+    expect(lesson?.emphasis).toEqual([[{ start: 4, end: 7 }], []])
+    expect(lesson?.voice).toBe('en-US-AriaNeural')
+    expect(lesson?.originalText).toBe('The cat sat. The dog ran.')
+  })
+
+  it("tanib bo'lmaydigan xom yozuvlar faylga TUSHMAYDI", () => {
+    writeRaw([makeLesson(), { id: '', buzuq: true }])
+
+    const file = JSON.parse(exportLessonsJson()) as { lessons: Lesson[] }
+
+    // Tekshiruvdan o'tmagan narsani zaxiraga yozib qo'yish uni "yaroqli" deb
+    // ko'rsatardi — buzuq yozuvning yo'li `corruptLessonsBackup`, bu emas.
+    expect(file.lessons).toHaveLength(1)
+    expect(file.lessons[0]?.id).toBe('l-1')
+  })
+})
+
+describe('importLessonsJson — tiklash', () => {
+  it("eksport → toza ombor → import: dars aynan qaytadi", () => {
+    saveLesson(makeLesson({ progress: 1, skipped: [0], emphasis: [[{ start: 4, end: 7 }], []] }))
+    const backup = exportLessonsJson()
+    const before = listLessons()
+
+    localStorage.clear()
+    expect(listLessons()).toEqual([])
+
+    const result = importLessonsJson(backup)
+
+    expect(result).toEqual({ ok: true, added: 1, updated: 0 })
+    expect(listLessons()).toEqual(before)
+  })
+
+  it("ikki marta import qilish natijani O'ZGARTIRMAYDI (idempotent)", () => {
+    const backup = (() => {
+      saveLesson(makeLesson())
+      return exportLessonsJson()
+    })()
+    localStorage.clear()
+
+    importLessonsJson(backup)
+    const once = listLessons()
+    const second = importLessonsJson(backup)
+
+    // Statistikadan farqi shu yerda ko'rinadi: u yig'indilarni ikkilantirardi,
+    // shuning uchun almashtiradi; dars esa turg'un `id` li yakka obyekt.
+    expect(second).toEqual({ ok: true, added: 0, updated: 1 })
+    expect(listLessons()).toEqual(once)
+  })
+
+  it("sarlavhasiz MASSIVni ham qabul qiladi — buzuq nusxani qo'lda tiklash yo'li", () => {
+    // `corruptLessonsBackup` aynan shu shaklni beradi: ombor formatining o'zi.
+    const raw = JSON.stringify([makeLesson()])
+
+    const result = importLessonsJson(raw)
+
+    expect(result).toEqual({ ok: true, added: 1, updated: 0 })
+    expect(listLessons().map((l) => l.id)).toEqual(['l-1'])
+  })
+
+  it("ta'kidlash belgilari ichida qolgan ESKI faylni ham o'qiydi", () => {
+    // `emphasis` maydonisiz saqlangan dars: belgilar hali gap matnida turadi.
+    const raw = JSON.stringify([
+      { ...makeLesson(), sentences: ['The `cat` sat.', 'The dog ran.'], emphasis: undefined },
+    ])
+
+    importLessonsJson(raw)
+
+    const lesson = getLesson('l-1')
+    // O'qish yo'li bitta (`toLesson`), shuning uchun import ham ko'chirishdan foyda oladi.
+    expect(lesson?.sentences[0]).toBe('The cat sat.')
+    expect(lesson?.emphasis?.[0]).toEqual([{ start: 4, end: 7 }])
+  })
+})
+
+describe('importLessonsJson — birlashtirish', () => {
+  it("mavjud darslarni O'CHIRMAYDI, yangisini qo'shadi", () => {
+    saveLesson(makeLesson({ id: 'shu-yerda', title: 'Shu brauzerda yaratilgan' }))
+    const raw = JSON.stringify([makeLesson({ id: 'fayldan', title: 'Fayldan kelgan' })])
+
+    const result = importLessonsJson(raw)
+
+    expect(result).toEqual({ ok: true, added: 1, updated: 0 })
+    // Almashtirish bo'lganda `shu-yerda` yo'qolardi — bu importning eng muhim farqi.
+    expect(listLessons().map((l) => l.id).sort()).toEqual(['fayldan', 'shu-yerda'])
+  })
+
+  it("bir xil `id` da mazmun fayldagisi bilan yangilanadi", () => {
+    saveLesson(makeLesson({ title: 'Eski sarlavha' }))
+    const raw = JSON.stringify([makeLesson({ title: 'Yangi sarlavha' })])
+
+    const result = importLessonsJson(raw)
+
+    expect(result).toEqual({ ok: true, added: 0, updated: 1 })
+    expect(getLesson('l-1')?.title).toBe('Yangi sarlavha')
+  })
+
+  it("PROGRESS ORQAGA SURILMAYDI: eski faylni adashib import qilish yo'qotish emas", () => {
+    // Dushanba: eksport (progress 0). Juma: mashq qilingan (progress 2).
+    const monday = JSON.stringify([makeLesson({ progress: 0, skipped: [] })])
+    saveLesson(makeLesson({ progress: 2, skipped: [1] }))
+
+    importLessonsJson(monday)
+
+    const lesson = getLesson('l-1')
+    expect(lesson?.progress).toBe(2)
+    // `skipped` progress bilan BIRGA yuradi: ilgarilagan yozuvning ro'yxati qoladi.
+    expect(lesson?.skipped).toEqual([1])
+  })
+
+  it("fayl ILGARIROQ bo'lsa, fayldagi progress qabul qilinadi", () => {
+    saveLesson(makeLesson({ progress: 0, skipped: [] }))
+    const raw = JSON.stringify([makeLesson({ progress: 2, skipped: [0] })])
+
+    importLessonsJson(raw)
+
+    const lesson = getLesson('l-1')
+    expect(lesson?.progress).toBe(2)
+    expect(lesson?.skipped).toEqual([0])
+  })
+
+  it("saqlangan progress fayldagi qisqaroq matnga sig'masa, kesiladi", () => {
+    saveLesson(makeLesson({ progress: 2 }))
+    // Fayldagi nusxada bitta gap bor — 2 endi mavjud bo'lmagan joyni ko'rsatadi.
+    const raw = JSON.stringify([makeLesson({ sentences: ['The cat sat.'], progress: 0 })])
+
+    importLessonsJson(raw)
+
+    // 1 = "dars tugadi" (gaplar soni), undan kattasi Practice ekranini buzardi.
+    expect(getLesson('l-1')?.progress).toBe(1)
+  })
+
+  it("tanib bo'lmaydigan MAVJUD yozuvlar import paytida ham saqlanadi", () => {
+    writeRaw([makeLesson(), { buzuq: 'yozuv' }])
+    expect(unknownLessonCount()).toBe(1)
+
+    importLessonsJson(JSON.stringify([makeLesson({ id: 'yangi' })]))
+
+    expect(unknownLessonCount()).toBe(1)
+    expect(listLessons().map((l) => l.id).sort()).toEqual(['l-1', 'yangi'])
+  })
+
+  it("fayldagi YAKKA buzuq yozuv qolganlarini to'xtatmaydi", () => {
+    const raw = JSON.stringify([{ id: '' }, makeLesson(), 42])
+
+    const result = importLessonsJson(raw)
+
+    expect(result).toEqual({ ok: true, added: 1, updated: 0 })
+    expect(listLessons().map((l) => l.id)).toEqual(['l-1'])
+  })
+})
+
+describe('importLessonsJson — rad etish', () => {
+  /** Xato qaytganda ombor tegilmasligi kerak — har bir holat shu bilan tekshiriladi. */
+  function expectUntouched(before: string | null): void {
+    expect(localStorage.getItem(LESSONS_KEY)).toBe(before)
+  }
+
+  it("JSON bo'lmagan faylni rad etadi", () => {
+    saveLesson(makeLesson())
+    const before = localStorage.getItem(LESSONS_KEY)
+
+    const result = importLessonsJson(CORRUPT)
+
+    expect(result.ok).toBe(false)
+    expectUntouched(before)
+  })
+
+  it("noto'g'ri versiyani rad etadi", () => {
+    const before = localStorage.getItem(LESSONS_KEY)
+
+    const result = importLessonsJson(JSON.stringify({ version: 2, kind: 'lessons', lessons: [] }))
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Qo'llab-quvvatlanmaydigan versiya: `version: 1` kutilgan edi.",
+    })
+    expectUntouched(before)
+  })
+
+  it("STATISTIKA faylini rad etadi va sababini aytadi", () => {
+    saveLesson(makeLesson())
+    const before = localStorage.getItem(LESSONS_KEY)
+
+    // Ikkala fayl ham bitta "zaxira" bo'limidan tanlanadi, ya'ni bu real xato.
+    const statsFile = JSON.stringify({ version: 1, sessions: [], words: {}, days: {} })
+    const result = importLessonsJson(statsFile)
+
+    expect(result.ok).toBe(false)
+    expect(result.ok === false && result.error).toContain('statistika zaxirasi')
+    expectUntouched(before)
+  })
+
+  it("birorta dars o'qilmasa XATO qaytaradi", () => {
+    const before = localStorage.getItem(LESSONS_KEY)
+
+    const result = importLessonsJson(JSON.stringify({ version: 1, kind: 'lessons', lessons: [] }))
+
+    // "Tiklandi" deb xabar berish hech narsa qo'shmagan importni yashirardi.
+    expect(result).toEqual({ ok: false, error: "Faylda o'qib bo'ladigan dars topilmadi." })
+    expectUntouched(before)
+  })
+
+  it("yozib bo'lmasa JIMGINA muvaffaqiyat qaytarmaydi", () => {
+    vi.stubGlobal('localStorage', createStorageRejecting(LESSONS_KEY))
+
+    const result = importLessonsJson(JSON.stringify([makeLesson()]))
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Yozib bo'lmadi: brauzer xotirasi to'lgan bo'lishi mumkin.",
+    })
+    expect(listLessons()).toEqual([])
+  })
+
+  it("`localStorage` umuman bo'lmasa ham yiqilmaydi", () => {
+    vi.stubGlobal('localStorage', undefined)
+
+    const result = importLessonsJson(JSON.stringify([makeLesson()]))
+
+    expect(result.ok).toBe(false)
   })
 })
