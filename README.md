@@ -92,9 +92,17 @@ hisoblanmaydi — o'sha so'z keyingi safar qaytadan sintez qilinadi.
 
 ## Statistika zaxirasi
 
-Butun statistika va darslar `localStorage` da (`dnt.lessons.v1`, `dnt.stats.v1`). Bu **yagona
-nusxa**: bitta "clear browsing data" oylik tarixni o'chiradi, ikkita ochiq tab esa oxirgi
-yozganini g'olib qiladi.
+Darslar `localStorage` da (`dnt.lessons.v1`), **statistika esa IndexedDB da** (`dnt-stats`).
+Ikkalasi ham **yagona nusxa**: bitta "clear browsing data" oylik tarixni o'chiradi.
+
+Ikkita ochiq tab masalasi ikki xil hal qilingan: statistika yozuvlari **tranzaksiya** ichida
+bo'lgani uchun ikkinchi tabda tugagan seans endi jimgina yo'qolmaydi; darslar esa hamon
+"oxirgi yozgani g'olib" qoidasida.
+
+Ilova ishga tushganda `navigator.storage.persist()` chaqiriladi — u **butun** brauzer omborini
+(IndexedDB ni ham, `localStorage` ni ham) brauzerning joy tozalashidan himoya qiladi. Bu so'rov
+**rad etilishi mumkin**, shuning uchun Statistika ekranida holat ko'rsatkichi bor: jimgina
+yo'qolish o'rniga ko'rinadigan holat. Rad etilgan bo'lsa muntazam eksport ayniqsa muhim.
 
 Shuning uchun **Statistika** ekranida JSON eksport/import bor. Muhim mashqlardan keyin eksport
 qilib qo'ying. Import mavjud ma'lumotni **birlashtirmaydi, to'liq almashtiradi** — ikki marta

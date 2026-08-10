@@ -1,0 +1,598 @@
+RALPH — docs/stats-longterm.md M0..M4 amalga oshirish
+=====================================================
+
+QABUL QILINGAN QARORLAR (§11)
+- 11.1 keyPath: 'w'                    — FOYDALANUVCHI tanladi
+- 11.2 HALF_LIFE_DAYS = 90             — hujjatdagi qaror, "MVP soddalashtirishi" deb belgilanadi
+- 11.3 fake-indexeddb devDependency    — CLAUDE qaroti: §8.4 to'rtta tuzog'i testsiz qolmasin
+- 11.4 Stats=5 / Results=1 farqi saqlanadi + measureG() UI da, g >= 0.1429 da ogohlantirish
+- 11.5 O'lchov tizimi (SRS qo'shilmaydi) — §7 da allaqachon hal qilingan
+
+BAJARILGAN
+----------
+US-001 (M0) navigator.storage.persist()                              PASSES
+  src/store/persist.ts (yangi), tests/core/persist.test.ts (9 test), src/main.tsx boot chaqiruvi.
+  requestPersistence / persistenceState / storageEstimate.
+  Namuna: stats.ts getStore() dagi SecurityError-xavfsiz aniqlash uslubi takrorlandi —
+  mavjudlik tekshiruvining O'ZI tashlashi mumkin, shuning uchun u ham try ichida.
+  main.tsx: `void requestPersistence().catch(() => {})` — render bloklanmaydi, rad javobi halokatli emas.
+
+US-002 (M1) src/core/wordScore.ts                                    PASSES
+  Sof modul, 55 test. Eksport: HALF_LIFE_DAYS=90, SHRINKAGE_M=20, DEFAULT_G=0.08,
+  dayNumber, dayNumberToKey, dayKeyToNumber, decayFactor, decayed, shrunkScore,
+  orderFlipG, estimateBeta.
+  §6 jadvalining 7 qatori ham raqamma-raqam tekshirilgan (toBeCloseTo, 4 kasr).
+  Tasdiqlangan: 5/10=0.2200, 3/3=0.2000, 10/50=0.1657, 2/3=0.1565, 1/1=0.1238,
+  20/200=0.0982, 0/20=0.0400. orderFlipG(20)=0.142857.
+
+TEKSHIRUV NUQTASI (US-001 + US-002 dan keyin)
+  npm test -> 18 fayl, 653 test o'tdi, typecheck 0 xato.
+
+TOPILGAN NARSALAR / KELAJAK UCHUN ESLATMA
+-----------------------------------------
+1. dayNumber ni `(ms - offset)/86400000` bilan yozib bo'lmaydi — DST kunida sutka
+   23/25 soat bo'lgani uchun kun raqami tashlab ketiladi. To'g'ri yo'l: LOKAL sana
+   komponentlarini olib, ularni UTC sifatida QAYTA yig'ish (Date.UTC). Xatosi
+   yiliga ikki marta va jimgina chiqardi.
+
+2. estimateBeta da haqiqiy nuqson topildi: bir xil nisbatli qatorlar suzuvchi nuqta
+   shovqini tufayli s^2 ~ 2e-33 beradi va m_hat ~ 4e31 chiqadi — chekli, musbat va
+   butunlay ma'nosiz. `s^2 > 0` tekshiruvi buni USHLAMAYDI. Yechim: nisbatlarning
+   bir xilligini to'g'ridan-to'g'ri solishtirish (epsilon tanlash shart emas).
+
+3. decayed() ATAYIN faqat {de, dx} qaytaradi, `l` ni emas — `l = max(l, today)` ni
+   yangilash YOZUV qatlamining ishi (§5).
+
+4. SentenceRecord.lessonId faqat ikki joyda: stats.ts:255 (parse) va
+   useTypingSession.ts:464 (yozuv). Results.tsx allaqachon SessionRecord.lessonId
+   dan foydalanadi — olib tashlash xavfsiz.
+
+5. Repo uslubi: izohlar o'zbekcha (lotin), qalin, "nega shunday VA nega boshqacha
+   emas" ni tushuntiradi. Rad etilgan variantlar izohda ochiq qayd etiladi.
+
+US-003/004/005 (M1) stats.ts                                         PASSES
+  WordStat = {exposures, errors, f?, l?, de?, dx?} — ixtiyoriylar audioEnabled? presedenti.
+  seedDecayed() §6.5; recordSession da decay->add TARTIBI, monoton l, f minimumi, dx<=de.
+  hardestWords -> HardWordRow {word, exposures, errors, rate, score, lastDay}.
+  measureG() + G_ORDER_FLIP. SentenceRecord.lessonId olib tashlandi. Yaxlitlash
+  faqat normalizeSession da (parseStats diskdagi har qanday qiymatni qabul qiladi).
+  Testlar 66 -> 85 it(), 0 o'chirilgan, 0 skip.
+
+US-007/008/009 (M2) statsSchema.ts + statsDb.ts + fake-indexeddb        PASSES
+  §8.4 a/b/c/d ning hammasi kodda. 26 test.
+
+TEKSHIRUV NUQTASI (M0+M1+M2)
+  npx vitest run -> 20 fayl, 698 test o'tdi. typecheck 0 xato.
+
+QO'SHIMCHA TOPILGAN NARSALAR
+----------------------------
+6. `g` ham SO'NDIRILGAN de/dx yig'indisidan olinadi. §5 ning "har o'qishda
+   tartiblashdan oldin so'ndirish" invarianti g ga HAM tegishli — aks holda
+   hardestWords ichida ikki xil vaqt qatlami aralashardi. Va g to'siqdan
+   OLDIN, butun lug'at bo'yicha hisoblanadi: aks holda minExposures ni
+   o'zgartirish ballarni ham surib yuborardi.
+
+7. ⚠️ Fossillashuv testini IKKITA so'z bilan yozib bo'lmaydi. e=50/x=25 va
+   e=10/x=5 bo'lsa g ham aynan 0.5 chiqadi va shrinkage ikkala ballni AYNAN
+   tenglashtiradi (farq 0.00e+00) — test bo'sh bo'lardi. Uchinchi, past
+   nisbatli bazaviy qator (the, 0.02) kerak: shundagina g=0.18 va
+   rhythm(0.2867) > thorough(0.1801). Mustaqil hisob bilan tasdiqlandi.
+
+8. §8.4a uchun eng xavfsiz naqsh: butun hisob-kitobni tranzaksiyadan OLDIN sof
+   funksiyada bajarish, tranzaksiya ichida faqat put() qoldirish.
+
+9. statsDb.openDb() IKKI XIL signal beradi: IDB yo'q -> null (§8.4d),
+   boshqa tab bloklagan -> StatsDbBlockedError (§8.4b). Bannerdagi maslahat
+   ikki holatda butunlay boshqa.
+
+10. fake-indexeddb o'rnatish uchun --legacy-peer-deps kerak — repoda OLDINDAN
+    mavjud @andresaya/edge-tts <-> typescript@7 peer nizosi. Yangi muammo emas.
+
+US-006 (M1 UI)                                                       PASSES
+  formatLastSeen(): lastDay undefined -> "noma'lum" (bugungi sana EMAS).
+  Grid mobil'da 3 ustun, sm:+ da 4 — hidden sm:block (Results.tsx:479 naqshi).
+  measureG() ko'rsatkichi, hasWordData bilan "hali o'lchanmagan" ajratilgan.
+  g >= G_ORDER_FLIP da diagnostika ogohlantirishi (halokat emas deb yozilgan).
+
+US-014 (M4) statsCompact.ts moduli                                   MODUL TAYYOR
+  Chegara KUN RAQAMIDA solishtiriladi, xom ms da emas — "now - 180*86400000"
+  DST o'tishlarida chegarani bir soatga siljitardi. Kursor by_endedAt bo'yicha
+  eng eskidan yuradi va chegarada TO'XTAYDI. words/days tegilmaydi.
+  meta.lifetime ga ATAYIN tegilmaydi: §8.2 bo'yicha u har gapda oshiriladi,
+  ya'ni o'chirish paytiga kelib allaqachon yangilangan. Uni "ayirish" aynan
+  §4.3 oldini olish uchun yaratilgan nuqsonni qaytarardi.
+  QOLGANI: boot'ga ulash (US-013).
+
+TOPILGAN NUQSON (men topdim, m3migrate ga yuborildi)
+----------------------------------------------------
+11. parseStats (stats.ts:501) so'z kalitlarini KICHIK HARFGA KELTIRMAYDI —
+    faqat recordSession (:760) keltiradi. importJson esa parseStats natijasini
+    to'g'ridan-to'g'ri diskka yozadi. Ya'ni qo'lda tahrirlangan zaxira fayli
+    {"The": ..., "the": ...} ni v1 omboriga kirita oladi.
+    NEGA JIDDIY: §2.5 — IndexedDB birlamchi kalitlari O'ZGARMAS. keyPath 'w'
+    bo'lgani uchun migratsiyada kirgan noto'g'ri kalitni keyin tuzatish "har
+    qatorni o'chirib qayta kiritish" degani. Ustiga f/l tiklash
+    token.text.toLowerCase() bilan qidiradi — "The" qatori hech qachon
+    topilmaydi va "the" bilan yonma-yon ikkita qator bo'lib qoladi.
+    TUZATISH: buildMigration da kalitni normallashtirish + to'qnashganlarni
+    birlashtirish (e/x/de/dx qo'shiladi, f=min, l=max).
+
+STATS.TS CHAQIRUV XARITASI (US-011/US-013 uchun) — 22 ta joy
+------------------------------------------------------------
+Home.tsx:165                totals() + streakDays()          (bitta qatorda ikkita)
+Results.tsx:214             hardestWords(1, 5_000)
+Results.tsx:233             loadStats().sessions -> by_endedAt TESKARI kursorga
+Results.tsx:255             getSession(sessionId)
+Results.tsx:308             streakDays()
+Stats.tsx:202-207           loadStats, totals, streakDays, hardestWords,
+                            audioComparison, measureG   (readSnapshot ichida)
+Stats.tsx:251               exportJson()
+Stats.tsx:297               corruptStatsBackup()             -> §9.2 bo'yicha O'CHADI
+Stats.tsx:510               dailySeries(range)               -> loading holati kerak
+Stats.tsx:537               importJson(raw)
+Stats.tsx:577               clearStats()
+Stats.tsx:587               discardCorruptStatsBackup()      -> §9.2 bo'yicha O'CHADI
+useTypingSession.ts:404     recordSession(session, wordDelta) -> §8.2 shartnomasiga
+statsMigrate.ts             loadStats() + tiplar
+
+ARXITEKTURA QAROTI (US-011)
+---------------------------
+stats.ts ni joyida qayta yozish o'rniga v1 o'quvchisi ALOHIDA src/store/statsV1.ts
+ga ajratiladi. Sabab: §9 v1 parserni saqlashni talab qiladi (migratsiya + eski
+zaxira fayllarini import qilish), lekin u yangi async API bilan bitta faylda
+yashasa, ~1000 qatorli fayl IKKI XIL ombor modelini birga tutib turardi.
+SentenceRecord/SessionRecord/AudioBucket/AudioComparison tiplari statsSchema.ts
+ga ko'chadi (§9.2 dagi "M3 da bitta ta'rifga birlashtiriladi" izohi).
+
+US-010 (M3) statsMigrate.ts                                          PASSES
+  §9.1 f/l omon qolgan seanslardan tiklanadi (Results.tsx:194-207 naqshi);
+  tiklanmagani UMUMAN YO'Q ("'f' in row === false") — undefined ham emas, ya'ni
+  by_l indeksiga tushmaydi. §4.3 lifetime maydonma-maydon. Idempotent: marker
+  tekshiruvi va put'lar AYNAN BITTA readwrite tranzaksiyada — ikkita tab
+  bir vaqtda migratsiya qila olmaydi. 38 test.
+  Kalit normallashtirish nuqsoni tuzatildi (11-band): trim().toLowerCase() +
+  mergeWordRows (e/x/de/dx qo'shiladi, f=min, l=max; pickDay yordamchisi —
+  Math.min(undefined, ...) NaN berib by_l ni jimgina buzardi).
+
+US-015 (M4) saqlash holati ko'rsatkichi                              PASSES
+  Uch holat ajratilgan; 'denied' da eksport tavsiyasi + ixtiyoriy
+  "doimiy saqlashni so'rash" tugmasi (Firefox foydalanuvchi harakatidan keyin
+  so'raydi). Baytlar O'NLIK asosda (1000) — §2 konvensiyasi. mountedRef bilan
+  poyga yopilgan; yuklanguncha "Tekshirilmoqda…", soxta "hammasi joyida" yo'q.
+
+MUSTAQIL KO'RIK NATIJASI (M0 + M2) — 20 topilma, 0 BLOKER, 5 JIDDIY
+--------------------------------------------------------------------
+J1 runTx body sinxronligi TIP darajasida majburlanmaydi. Yalang'och `void`
+   qaytish tipi Promise<void> ni ham qabul qiladi -> async body kompilyatsiyadan
+   O'TADI va faqat foydalanuvchi diskida yiqiladi. eachCursor da bu himoya
+   `boolean | void` union tufayli TASODIFAN bor. Fayl o'zi bermayotgan
+   kafolatni va'da qilgan.
+J2 resolve(collected as T) undefined ni T sifatida beradi. Dalil: statsCompact.ts
+   da MEN allaqachon qo'lda collect(0) aylanma yo'lini yozganman.
+J3 db.onclose ulanmagan -> sayt ma'lumoti tozalansa keshda ABADIY o'lik ulanish
+   qoladi va har gap jimgina yozilmaydi (§8.4d aynan buni rad etadi).
+J4 §8.4b eng zaif qoplangan: StatsDbBlockedError NOL test, onblocked yo'li hech
+   qachon ishga tushmaydi, versionchange testi hodisani dispatch qilmaydi.
+J5 estimateBeta hujjat (§6.3, §15) iqtibos qilgan BETA-BINOMIAL emas, sof Beta
+   momentlarini qo'llaydi. Beta(2,23) simulyatsiyasi (haqiqiy m=25):
+   exposures=2000 -> 27.6, 50 -> 16.3, 1..20 (HAQIQIY jadval) -> 3.0.
+   §6.2 esa m > 7.9 talab qiladi. Ya'ni M4 da "konstantani ma'lumot bilan
+   tekshirish" bajarilsa, u m=20 ni "juda katta" deb ko'rsatib, pasaytirishga
+   undardi va reyting §6.2 ogohlantirgan tarzda AG'DARILARDI.
+   Test exposures=2000 ni ataylab olgani uchun haqiqiy rejim umuman sinalmagan.
+
+KO'RIK TASDIQLAGAN TO'G'RI QARORLAR (soxta topilma emas)
+  netCharsOf operator ustunligi TO'G'RI; accumToBucket nol bo'luvchi to'liq
+  qorovullangan; dayKeyToNumber normallashtirish tekshiruvi Date.UTC ning jim
+  to'g'rilashini ushlaydi (2024-02-31, 0-99 -> 1900+y ham); §6 ning yettala
+  jadval qiymati 4 xona aniqlikda mos; orderFlipG formulasi mustaqil keltirib
+  chiqarilib tasdiqlandi; persisted() true da persist() ni o'tkazib yuborish
+  to'g'ri; addLifetime ning *Since ga tegmasligi to'g'ri.
+
+12. ⭐ F5 QARORI (men qabul qildim, US-011 ga o'tadi):
+    l si TIKLANMAGAN so'zlar HECH QACHON so'nmaydi — decayed() l ni talab qiladi,
+    ya'ni §6.5 seed'i (de=min(e,20)) ABADIY muzlab qoladi va o'sha so'zlar §1.1
+    dagi FOSSIL bo'lib qolaveradi. Ya'ni migratsiya aynan hal qilmoqchi bo'lgan
+    muammoni bir qism so'zlar uchun saqlab qolardi.
+    QAROR: so'nish langari = row.l ?? meta['v1MigratedAt'].
+    Migratsiya sanasi ALLAQACHON marker sifatida saqlanadi, ya'ni yangi maydon
+    KERAK EMAS. Ko'rsatish semantikasi o'zgarmaydi: UI hamon row.l ga qaraydi va
+    undefined bo'lsa "noma'lum" deydi (§9.1 buzilmaydi). Ya'ni KO'RSATISH sanasi
+    va SO'NISH langari ataylab ajratiladi.
+
+13. F4: emptyLifetime() "qisman, lekin sanasi noma'lum" holatini ifodalay
+    olmaydi. meta o'qishda yo'q chiqsa (yarim migratsiya) fallback *Since siz
+    nol konvert bo'ladi va UI qisman sonni YALANG'OCH umrbod raqam deb chizadi —
+    §4.3 oldini olish uchun yaratilgan xatoning aynan o'zi. US-011 o'qish
+    yo'lida "meta yo'q" != "bo'sh meta" farqi kerak.
+
+US-018a PLAN.md                                                      BAJARILDI
+  §11 "Statistikani uzoq muddat saqlash (IndexedDB)" qo'shildi: nima uchun
+  o'zgardi, §11 savollariga javoblar jadvali, 8 ta buzilmas invariant,
+  ataylab rad etilganlar, yo'qotilgan narsalar.
+  §6 dagi ESKIRGAN da'vo tuzatildi: reyting qoidasi hamon "errors/exposures"
+  deb yozilgan edi. PLAN "qarorlar registri" bo'lgani uchun bu jimgina
+  yolg'on bo'lib qolardi.
+
+PLAN.md DA M3 TUGAGACH YANGILANISHI KERAK (US-018b)
+---------------------------------------------------
+:511  "localStorage: dnt.lessons.v1, dnt.stats.v1"  -> statistika IDB 'dnt-stats' ga
+:520  "500 seansdan keyin eng eskilari tashlanadi"  -> 180 kunlik retention
+:575  "MAX_SESSIONS = 500"                          -> RETENTION_DAYS = 180
+:577  "buzuq payload alohida kalitga" (dnt.stats.v1.corrupt) -> statistika uchun
+      O'CHDI (§9.2), darslar uchun QOLADI — farqni ochiq yozish kerak
+:520  kunlik trend nomuvofiqligi                    -> `nc` uni tuzatadi (§4.2)
+:712  "stats — buzuq payloadni tiklash, kvota siqilishi" test tavsifi -> 17 test o'chdi
+:754  "localStorage — yagona nusxa / ikkita tab oxirgi yozganini g'olib qiladi"
+      -> statistika uchun tranzaksiya buni hal qiladi; darslar uchun QOLADI
+
+docs/stats-longterm.md DA:
+  sarlavhadagi "Holat: taklif, qaror kutilmoqda. Kod hali o'zgarmagan." -> yangilanadi
+  §11 dagi besh savolga qabul qilingan javoblar qayd etiladi
+
+TUZATILDI: fixcore (J5, K4-K8, F1, F6, F7)                           BAJARILDI
+  J5: estimateBeta beta-binomial ga keltirildi — binomial had ayrildi:
+      s2t = s2p - mu*(1-mu)*mean(1/n_i);  s2t <= 0 bo'lsa null.
+  MENING MUSTAQIL SIMULYATSIYAM (Beta(2,23), haqiqiy g=0.08 m=25, seed 4242,
+  2000 qator) agentnikini TASDIQLADI:
+      exposures 1-20 (HAQIQIY):  ESKI m=3.47 [PAST]  ->  YANGI m=20.13 [OK]
+      exposures 50:              ESKI m=17.09        ->  YANGI m=27.34
+      exposures 2000:            ESKI m=24.32        ->  YANGI m=24.64
+      exposures 1-5:             ESKI m=1.24         ->  YANGI null (TO'G'RI)
+  1-5 da null qaytishi nuqson EMAS: o'sha rejimda tarqoqlikni sof binomial
+  shovqin tushuntiradi, ya'ni haqiqiy farqni isbotlab bo'lmaydi. Eski usul
+  o'sha yerda 1.24 degan ISHONCHLI KO'RINUVCHI son berardi — eng zararlisi.
+  K4: dayNumber chekli bo'lmagan kirishda NaN qaytaradi (solishtiruvda zararsiz),
+      dayNumberToKey esa TASHLAYDI — buzuq kalit hech qachon yozilmaydi.
+      Assimetriya yopildi.
+  K8: soxta ayniyat testi endi Math.floor(ms/86400000) bilan TAQQOSLAYDI —
+      Kiritimati'da farq -1, Midway'da +1. TZ endi bezak emas.
+  F1: izohdagi noto'g'ri asos tuzatildi — klassik nuqson DST'ning o'zidan emas,
+      ofsetni BIR MARTA keshlashdan chiqadi.
+  K5: persist() rad etsa endi 'denied' (avval 'unsupported' edi) — §3.3 ning
+      butun maqsadi "ko'rinadigan holat" bo'lgani uchun bu muhim farq.
+
+TUZATILDI: fixdb (J1-J4, K1-K3)                                      BAJARILDI
+  J1: runTx body sinxronligi IKKI QATLAM bilan majburlandi —
+      (1) TIP: qaytish tipi `void | boolean` (yalang'och void EMAS; farqi shu:
+          yalang'och void har qanday qiymat qaytaradigan funksiyani qabul qiladi,
+          shu jumladan async ni. `boolean` o'qilmaydi — u faqat union hosil qiladi)
+      (2) ISH VAQTI: thenable qaytarilsa tranzaksiya abort + reject.
+          Ustiga body ning O'Z rad javobi yutiladi, aks holda "unhandled
+          rejection" aniq xabar ustidan chiqib sababni yashirardi.
+  J2: overload — void variant `initial` talab qilmaydi, qiymat qaytaradigani
+      MAJBURAN beradi. `undefined as T` kasti endi asoslangan: unga faqat
+      void overload'idan yetib boriladi, ya'ni T = void.
+  J3: db.onclose ulandi.
+  J4: onblocked, settled->db.close(), parallel openDb bo'lishuvi, dispatchEvent
+      bilan versionchange — hammasi testga kirdi.
+  K3: withStatsDb() qo'shildi — openDb + runTx + InvalidStateError da BIR MARTA
+      qayta ulanib qayta urinish. statsCompact.ts shunga o'tkazildi va mendagi
+      qo'lda collect(0) aylanma yo'li `initial` ga almashtirildi.
+
+TEKSHIRUV NUQTASI (barcha ko'rik tuzatishlaridan keyin)
+  npm test -> 22 fayl, 774 test o'tdi. typecheck 0 xato.
+
+US-012 SOF YADROSI (men yozdim)                                      BAJARILDI
+  src/core/session.ts ga ikkita sof funksiya + 13 test (session.test.ts 25->38).
+  Joylashuv sababi: PLAN §7 presedenti — hasWrittenSentence allaqachon shu
+  yerda, chunki "testlanadigan qarorlar src/core ga sof funksiya bo'lib
+  chiqariladi". Bu §13 dagi ENG JIDDIY xatarni (ikki marta sanash) React va
+  IndexedDB'dan butunlay ajratadi.
+
+  planSentenceWrite(pending, hasWritten, record) -> {write, pending, hasWritten}
+    hasWritten          -> {write:[record], pending:[]}          (buferlash tugadi)
+    !hasWritten+skipped -> {write:[], pending:[...pending,record]} (ushlanadi)
+    !hasWritten+yozilgan-> {write:[...pending,record], pending:[]} (BIRGA quyiladi)
+  ⚠️ Bufer BITTA gap emas, ketma-ket kelgan BARCHASI. "Faqat oxirgisini
+  saqlash" varianti uchta tashlangan gapdan ikkitasini jimgina yo'qotardi va
+  seansdagi gaplar soni yozuv bilan kelishmay qolardi.
+  Invariant testda mixlangan: barcha yozuvlar bo'ylab yurgandan keyin
+  hasWritten === hasWrittenSentence(all) — HAR DOIM.
+
+  wordDeltaOf(tokens, errorCounts) -> Map<so'z, {exposures, errors}>
+  ⚠️ KUMULYATIV EMAS — delta gapning O'ZIDAN olinadi, kumulyativ xaritadan
+  AYIRISH bilan emas: ayirish usuli bitta o'tkazib yuborilgan yangilanishda
+  jimgina siljib ketardi. Qisqich (errors <= exposures) bu yerda YO'Q, chunki
+  invariant ombordagi YIG'INDIGA tegishli, bitta gapning hissasiga emas —
+  xatolar klavish darajasida sanaladi (§6.2).
+
+TEKSHIRUV NUQTASI
+  npm test -> 22 fayl, 788 test o'tdi. typecheck 0 xato.
+
+14. TS quirk: `let pending: readonly Rec[] = []` ichida `plan = f(pending)` va
+    `pending = plan.pending` yozilsa TS7022 siklik inferensiya beradi — `pending`
+    ga aniq tip qo'yish YETARLI EMAS, `plan` ga ham annotatsiya kerak.
+
+JARAYONDA
+---------
+reviewM1  stats.ts M1 mantig'ining mustaqil ko'rigi — QAYTA YOZISHDAN OLDIN.
+          Sabab: M1 mantig'i (so'nish, urug'lantirish, shrinkage, measureG,
+          yaxlitlash) US-011 dagi async v2 ga O'ZGARISHSIZ ko'chadi, ya'ni
+          nuqsonni hozir topish keyin topishdan arzonroq.
+          ⚠️ Shu sababli stats.ts ga TEGILMAYAPTI: ko'rik topilmalari
+          `stats.ts:NNN` bilan keladi, tahrir esa qator raqamlarini siljitardi.
+
+KEYINGI
+-------
+US-011 (async API v2), US-012 (§8.2 yozuv shartnomasi), US-013 (ekranlar async),
+US-014..017 (M4), US-018 (hujjat)
+
+CHOK TESTI (men yozdim)                                              BAJARILDI
+  tests/store/seam.test.ts — 6 test. v1 payload -> migrateV1ToV2() -> IDB ->
+  compactSessions() -> qayta o'qish. Alohida testlar har modulning O'Z
+  shartnomasini tekshiradi, bu esa modullar orasidagi MA'NO chokini.
+  Isbotlangan:
+   - §9.1 darsda uchragan so'z sana oladi; uchramaganida maydon UMUMAN yo'q
+     ('l' in row === false), ya'ni by_l ga tushmaydi
+   - §4.2 seansi YO'Q kunda k/nc/chelaklar paydo bo'lmaydi (nol EMAS)
+   - §4.3 lifetime.activeMs = days YIG'INDISI (150000), seanslar yig'indisi
+     (40000) EMAS — fikstura farqni ataylab yasaydi
+   - qisqartirish so'z/kun/umrbodga TEGMAYDI va hisoblagichlar ORQAGA YURMAYDI
+   - qisqartirishdan keyingi qayta migratsiya o'chirilgan seansni TIKLAMAYDI
+     (marker bo'lmasa v1 payload hamon diskda bo'lgani uchun tiklanardi)
+
+TEKSHIRUV NUQTASI
+  npm test -> 23 fayl, 794 test o'tdi. typecheck 0 xato.
+
+MUSTAQIL KO'RIK (M1 mantig'i) — VERDIKT: REJECT
+------------------------------------------------
+Ko'rikchi 5 sohani bashorat qilib, 2 tasini TASDIQLADI va 3 tasini RAD ETDI
+(o'lchab, toza chiqqanini soxta topilma sifatida yozmadi). Bu muhim signal:
+ko'rik ishonchli.
+
+BLOKER 1 — l === undefined qatorlar HECH QACHON so'nmaydi.
+  v1 ma'lumotining 100% ida l yo'q. parseStats urug'lantiradi, recordSession
+  urug'ni diskka yozadi -> qator diskda {de,dx} bilan, l SIZ turadi ->
+  parseStats qayta urug'lantirmaydi, decayedCounters so'ndirmaydi -> ABADIY
+  MUZLAYDI. MENING HISOBIM:
+      fossil (3 yil oldin, langarsiz): de=20.00  dx=10.00 -> 0.3624 (BIRINCHI)
+      active (bugun, kunlik mashq):    de=65.17  dx=13.24 -> 0.2082
+      fossil AGAR langar bo'lsa:       de=0.0044 dx=0.0022 -> 0.2248 (= g)
+  So'ndirish kuchi AYNAN TESKARI joyga tushadi. Bu §1.1 ning so'zma-so'z
+  ta'rifi va M1 aynan shuni yo'q qilish uchun yozilgan.
+  ⚠️ stats.ts da langar tushunchasi UMUMAN yo'q edi — ya'ni F5 qarorini
+  (meta.v1MigratedAt) ifodalaydigan joy ham yo'q edi.
+
+BLOKER 2 — errors/dx qisqichlari TARTIBGA BOG'LIQ. MENING HISOBIM:
+      A) {exp:1,err:3} keyin {exp:5,err:0} -> exposures=6 errors=1 -> 17%
+      B) {exp:5,err:0} keyin {exp:1,err:3} -> exposures=6 errors=3 -> 50%
+  AYNI mashq tarixi, ball 1.77 marta farq qiladi. Buzilish UMRBOD errors da —
+  foydalanuvchi aynan so'ragan uchta raqamdan biri, §4.1 da "abadiy haqiqat"
+  deb ta'riflangan. Kesilgan farq na diskda, na seanslarda qolmaydi.
+
+15. ⭐ QAROR (men qabul qildim): xato TA'SIRLANISH darajasida sanaladi.
+    useTypingSession da min(errorCounts.get(i) ?? 0, 1).
+    NEGA: (a) foydalanuvchi aynan shuni so'ragan — "nechi marta XATO YOZILGAN",
+    uch harfni chalkashtirish "uch marta xato yozish" emas; (b) errors <= exposures
+    QURILISH bo'yicha o'rinli, natija tartibdan mustaqil; (c) §6.3 estimateBeta
+    p_i ni BINOMIAL ULUSH deb modellaydi — klavish sanog'ida p_i umuman ulush
+    emas edi, ya'ni §6.3 apparati noto'g'ri birlik ustida ishlardi; (d) og'irlik
+    ma'lumoti (1 vs 5 xato) YO'QOLMAYDI, chunki hozirgi qisqich uni ALLAQACHON
+    yo'q qilgan — ko'rik {exp:1,err:1}x10 va {exp:1,err:5}x10 baytma-bayt bir
+    xil qatorga tushishini ko'rsatdi.
+    ALMASHUV: xato OG'IRLIGI (nechta harf) endi umuman saqlanmaydi. Bu ongli
+    tanlov — agar kerak bo'lsa alohida hisoblagich sifatida keyin qo'shiladi.
+
+JIDDIY 4 — measureG() §12 M0 o'lchovi EMAS. Jadval urug'langani uchun u
+  min(e,20) bilan og'irlangan o'rtacha. min(e,20) ko'p uchraydigan (va odatda
+  ENG OSON) so'zlarning og'irligini kesadi -> siljish YUQORIGA:
+      100x{e:200,x:10} + 4900x{e:3,x:1}:  Sx/Se = 0.1700  vs  measureG = 0.2994
+  0.2994 hatto 9/49 = 0.184 chegarasidan ham oshadi. Yechim: measureLifetimeG().
+
+KO'RIK RAD ETGAN (o'lchandi, TOZA chiqdi — soxta topilma yozilmadi):
+  - Vaqt qatlami skewi YO'Q: hardestWords Date.now() ni BIR MARTA o'qiydi va
+    o'sha today ni ham globalErrorRate ga, ham har decayedCounters ga uzatadi.
+    Bir kunlik siljishda barcha so'nuvchi hadlar bir xil 0.992332 ga ko'payadi
+    va NISBATDA qisqaradi (g 0.125 -> 0.12529, 0.23%).
+  - Yaxlitlash TO'PLANMAYDI: seans darajasida maks 0.1 WPM (og'irlikli
+    O'RTACHA, YIG'INDI emas — xatolar qisqaradi). audioComparison da N=200 da
+    mediana 0.0016 WPM, maks 0.0078; gate esa bir necha WPM qidiradi.
+    dailySeries umuman gap yozuvlaridan o'qimaydi.
+  - Determinizm MUSTAHKAM: bitta Date.now(), to'liq tartib, NaN yetib bo'lmaydi.
+
+TEST NUQSONLARI (ko'rik topdi):
+  - toEqual(hardestWords(), hardestWords()) — funksiyani O'ZI bilan solishtiradi
+  - de:NaN, dx:4 testi — seedDecayed(50,10).dx ham AYNAN 4, ya'ni qoida
+    tekshirilmagan (o'z-o'zini tasdiqlaydi)
+  - "errors/exposures NISBATI bo'yicha" sarlavhasi — M1 dan keyin NOTO'G'RI
+  - {exposures:1,errors:4} -> {errors:1} testi nuqsonni RASMIYLASHTIRGAN
+
+KO'RIKNING OCHIQ SAVOLLARI -> US-011 GA O'TADI
+-----------------------------------------------
+S1. min(err,1) manbada g ni "xatoli ta'sirlanishlar ulushi" ga aylantiradi.
+    §6.2 jadvali va m=20 shu birlikda qayta tekshirilishi kerakmi?
+    JAVOB (men): §6.2 jadvali `g` ning ABSTRAKT qiymatlari ustida qurilgan
+    (0.08, 0.10, 0.12, 0.15) va birlikka bog'liq emas — u faqat "g qanchalik
+    yuqori bo'lsa tartib shunchalik xavf ostida" deydi. Yangi birlikda g
+    PASTROQ chiqadi, ya'ni siljish XAVFSIZ tomonga. Jadval o'zgarmaydi;
+    measureLifetimeG() ekranda haqiqiy qiymatni ko'rsatadi.
+
+S2. de = min(e, m) urug'i barqaror holatdagi de ~= 130 ga nisbatan juda past —
+    urug'langan qatorlar priorga kuchliroq tortiladi. Ataylabmi?
+    JAVOB (men): HA, va langar qo'shilgandan keyin bu to'g'ri xatti-harakat:
+    urug' "biz bu so'z haqida ishonchli ma'lumotga ega emasmiz" degani, ya'ni
+    uni o'rtachaga tortish aynan §6.1 ning maqsadi. Langarsiz u nuqson edi
+    (BLOKER 1), langar bilan esa xususiyat.
+
+S3. Results.tsx:214 hardestWords(1, 5_000) butun lug'atni tartiblaydi va
+    faqat ~200 tasini ishlatadi — har seans oxirida. IDB'da bu to'liq skaner.
+    §4.1 ga ko'ra ~5000 qatorda ~10 ms — qabul qilinadi, LEKIN US-011 uni
+    BATTAR qilmasligi kerak (masalan butun sessions do'konini yuklash bilan).
+    US-011 talabi: hardestWords faqat `words` do'konini skanerlaydi;
+    previousSession by_endedAt TESKARI kursor bilan, to'liq yuklashsiz.
+
+M1 BLOKERLARI TUZATILDI                                              BAJARILDI
+  BLOKER 1: StatsData.seedAnchorDay (hujjat darajasida) + baseCounters(stat,
+    today, anchor) — langar = stat.l ?? anchor. Ilgari ayni mantiq
+    decayedCounters va recordSession da IKKI marta yozilgan edi, endi bitta
+    manba. v2 uchun statsSchema.META_KEY_DECAY_ANCHOR_DAY qo'shildi va
+    migratsiya uni yozadi (v1 langari migratsiya sanasidan AFZAL).
+    HardWordRow.lastDay hamon stat.l — langar ekranga chiqmaydi, §9.1 butun.
+  BLOKER 2: qisqich MANBAGA (useTypingSession: min(errorCounts, 1)) VA delta
+    darajasiga ko'chirildi. Yig'indi ustidagi qisqichlar saqlandi, lekin endi
+    ular "hech qachon ishlamasligi kerak" invariant qorovuli.
+  JIDDIY 4: measureLifetimeG() qo'shildi (Sx/Se, urug'siz — §12 M0 aynan shu).
+    measureG/measureLifetimeG -> number | null (K3), qorovul endi IMZODA.
+  MUTATSIYA ZONDI: 4 ta zond, har biri AYNAN bitta testni yiqitdi.
+
+16. ⚠️ MA'NO CHOKI (fixm1 topdi, men yopdim): men yozgan wordDeltaOf hamon
+    KLAVISH darajasida sanardi va men buni test bilan ATAYIN mixlagandim.
+    M3 useTypingSession ni unga o'tkazganda BLOKER 2 JIMGINA qaytardi.
+    Bu mening xotira eslatmamning aynan tasdig'i: "fayl egaligi ma'no chokini
+    to'xtatmaydi". Qisqich TOKEN bo'yicha qo'yildi (so'z yig'indisiga emas):
+    bitta gapda ikki marta xato qilingan so'z 2/2 beradi, 2/1 emas.
+
+TEKSHIRUV NUQTASI (M1 blokerlaridan keyin)
+  npm test -> 23 fayl, 807 test o'tdi. typecheck 0 xato. build muvaffaqiyatli.
+
+JARAYONDA
+---------
+m3switch  US-011 + US-012 + US-013 birgalikda: statsV1.ts ajratish, async v2
+          API, §8.2 yozuv shartnomasini hook'ga ulash, uch ekran + bannerlar.
+          Uchalasi bitta o'zgarish, chunki ular bir-birisiz kompilyatsiya
+          bo'lmaydi.
+
+M3 O'TISHI — YASHIL TEKSHIRUV NUQTASI
+--------------------------------------
+  npm test  -> 23 fayl, 804 test o'tdi
+  typecheck -> 0 xato
+  build     -> muvaffaqiyatli
+
+⚠️ m3switch AGENTI TO'XTAB QOLDI (watchdog, 600s progress yo'q). Ombor qatlami
+   tugagan edi, Stats.tsx yarim ulangan. Ishni bo'lib yubordim:
+   - kattasi (tests/core/stats.test.ts -> tests/store/stats.test.ts, 118 xato)
+     m3tests agentiga
+   - Stats.tsx (16 xato) va statsMigrate.test.ts (1 xato) o'zim
+
+MEN QO'SHGAN NARSALAR (rejada bor edi, kodda yo'q edi)
+------------------------------------------------------
+17. §9.5 mergeLifetimeOnImport — import umrbod konvertni ALMASHTIRAR edi, ya'ni
+    eski zaxirani tiklash hisoblagichlarni ORQAGA surardi. Bu §4.3 aynan
+    oldini olish uchun yozilgan nuqson.
+    Endi: monoton hisoblagichlar max() bilan.
+    *Since esa max() EMAS va bu muhim: u "faqat shu kundan beri bilinadi"
+    degani, ya'ni KICHIKROQ sana KO'PROQ bilim. Va maydonning UMUMAN
+    yo'qligi "to'liq bilinadi" degani — u har qanday sanadan kuchli.
+    Shuning uchun: biror tomonda yo'q bo'lsa natijada ham yo'q, aks holda min.
+
+18. US-017 measureBeta() — UMRBOD x/e dan, so'nuvchi de dan EMAS. Sabab:
+    estimateBeta binomial tuzatish uchun n_i (butun SINOVLAR soni) talab
+    qiladi; de kasr son va bu ma'noni tashimaydi.
+    Stats.tsx da requiredM(g) = 40/(9-49g). Tekshirdim — §6.2 jadvalini AYNAN
+    takrorlaydi: g=0.08 -> 7.87 ("> 7.9"), 0.10 -> 9.76, 0.12 -> 12.82,
+    0.15 -> 24.24. g >= 9/49 da Infinity (hech qanday m ishlamaydi).
+
+19. Stats.tsx da summary === null holati: raqamlar o'rniga chiziqcha + ochiq
+    izoh. §4.3/F4: "konvert yo'q" != "hammasi nol" — nol ko'rsatish noma'lum
+    holatni "umrbod hech narsa qilmagansiz" deb ko'rsatardi.
+
+20. Kunlik trend izohi: nc bor kunlarda wpm endi TO'G'RI, nc yo'q kunlar soni
+    EKRANDA ko'rsatiladi ("o'lchanmagan kun nol emas, boshqa yo'l bilan
+    hisoblangan").
+
+21. §8.2 ni O'ZIM tekshirdim — to'rttala band ham to'g'ri:
+    - seans id boshida: const [sessionId] = useState(newSessionId)
+    - "hech narsa yozilmadi" signali alohida: hasWrittenRef (endSession
+      tarmoqlanishi buzilmagan)
+    - recordAndClose faqat writeSessionEnvelope
+    - kumulyativ wordStatsRef BUTUNLAY olib tashlangan — ikki marta sanash
+      endi tuzatilgan emas, IMKONSIZ.
+
+MUSTAQIL KO'RIK (M3) — VERDIKT: REVISE
+---------------------------------------
+1 BLOKER, 3 JIDDIY, 5 KICHIK. Ko'rikchi 23 ta sohani IJRO bilan
+(fake-indexeddb ustida haqiqiy modullar) tekshirib TOZA deb tasdiqladi —
+jumladan §8.2 ikki marta sanash, §8.4a, so'nish langari, §1.3 gate durabilligi,
+§9.3 clearStats, §9.4 kursorlar, §8.3 uchta xavfsiz holat.
+Oldindan bashorat qilgan 5 xatarining HAMMASI toza chiqdi — topilganlari
+boshqa joydan: ombor<->UI chegarasidan.
+
+BLOKER 1 — totals() IKKI XIL vaqt oynasini aralashtiradi.
+  netWpm   = netChars(QISMAN) / activeMs(TO'LIQ)
+  accuracy = correctKeystrokes(TO'LIQ) / keystrokes(QISMAN)
+  MENING HISOBIM (3 yillik ombor, days 1095 kun, sessions 250 kun):
+      HAQIQIY:   net wpm = 40.0   aniqlik = 96.0%
+      totals():  net wpm =  9.13  aniqlik = 100.0%  (clamp01 4.20 dan)
+  Yo'nalish DETERMINIK: netWpm doim past, accuracy doim yuqori va clamp01 uni
+  AYNAN 1 ga yopishtiradi. Ya'ni migratsiyagacha tarixi bor HAR BIR
+  foydalanuvchining aniqlik plitkasi "100.0%".
+  ⚠️ v1 GA NISBATAN REGRESSIYA: v1 da ikkala son ham AYNI sessions massividan
+  olinardi — oyna qisqa edi, lekin nisbat ICHKI JIHATDAN TO'G'RI edi.
+  ⚠️ Home.tsx "≥ 100.0%" deb chizadi va "ko'rsatilgandan KAM emas" deydi —
+  bu YOLG'ON DA'VO, taxmin emas. `≥` faqat XOM MONOTON hisoblagichga qo'llanadi.
+  TUZATISH: nisbatlar FAQAT izchil oynadan — migratsiyadan KEYINGI kunlardan
+  (d > dayNumber(v1MigratedAt)). Sabab: o'sha kunlar butunlay v2 yo'li bilan
+  yozilgan, ya'ni activeMs/correctKeystrokes/k/nc HAMMASI bir xil gaplardan.
+  Migratsiyadan oldingi kunlarda esa ular BITTA KUN ICHIDA ham kelishmaydi.
+
+JIDDIY 2 — boot migratsiyasi bilan gap yozuvi POYGASI. writePlan ko'r put()
+  qiladi va tranzaksiyasi buildMigration dan KEYIN ochiladi. Shu oynada tushgan
+  yozuv ustidan yoziladi -> seans qatori diskda, hissasi yo'q.
+  ⚠️ Practice.tsx YAGONA ekranki, u omborga YOZADI va YAGONA ekranki,
+  initStats() ni chaqirmaydi.
+JIDDIY 3 — blocked banneri Home/Results da hech qachon chiqmaydi
+  (setAvailability o'qishlardan KEYIN, o'qishlar esa osilib qoladi).
+  Latent: DB_VERSION=1 da onblocked erishib bo'lmaydi, lekin oyna ochiq.
+JIDDIY 4 — Stats.tsx YUKLANISHNI "Hali statistika yo'q" deb chizadi.
+  Results.tsx bu naqshni ochiq RAD ETGAN, Home.tsx to'g'ri qiladi.
+
+TEST MUALLIFI TOPGAN REGRESSIYA: "zombi qator" — v1 da {exposures:0} deltasi
+  diskka umuman tushmasdi, v2 da nextWordRow uni baribir yaratadi.
+
+22. ⚠️ fake-indexeddb + vi.useFakeTimers() = butun fayl timeout. Sabab: standart
+    useFakeTimers setImmediate ni ham qotiradi, fake-indexeddb esa tranzaksiyalarni
+    aynan shu bilan navbatga qo'yadi. Yechim: useFakeTimers({ toFake: ['Date'] }).
+
+╔══════════════════════════════════════════════════════════════════╗
+║  TO'XTATILDI (foydalanuvchi so'rovi bilan) — DAVOM ETTIRISH      ║
+╚══════════════════════════════════════════════════════════════════╝
+
+HOLAT: YASHIL VA XAVFSIZ
+  npx vitest run  -> 23 fayl, 815 test o'tdi
+  npm run typecheck -> 0 xato
+  npx vite build  -> muvaffaqiyatli
+  Rejaning M0..M4 bosqichlari va hujjatlar BAJARILGAN.
+
+QOLGAN ISH — AYNAN UCHTA NARSA
+------------------------------
+1. MIGRATSIYA POYGASI TESTLARI (JIDDIY 2)
+   Tuzatishning O'ZI KIRGAN: statsMigrate.ts dagi writePlan endi ko'r put()
+   emas, o'qi-birlashtir-yoz qiladi (mergeWordRows / addLifetime bor).
+   YOZILMAY QOLGANI: uning testi. Ko'rikchi stsenariysi:
+     v1 ombori bor, hali ko'chirilmagan. main.tsx void initStats() chiqaradi.
+     Shu oynada Practice ekranida gap tugaydi ->
+     kutilgan 11 ta'sirlanish / 948 correctKS / 1 seans
+     olingan  10 ta'sirlanish / 900 correctKS / 0 seans
+   Test tests/store/statsMigrate.test.ts ga qo'shilsin.
+
+   ⚠️ ALOHIDA OCHIQ SAVOL (ko'rikchi topgan, hal qilinmagan):
+   Practice.tsx YAGONA ekranki, u omborga YOZADI va YAGONA ekranki,
+   initStats() ni chaqirmaydi. Ya'ni "avval migratsiya" qoidasi aynan
+   YOZADIGAN ekranda mashina bilan majburlanmagan — faqat konvensiya bor.
+   Uch variant: (a) writeSentences boshida modul darajasidagi
+   migrationDone promise'ini kutish; (b) Practice.tsx ga initStats()
+   qorovuli; (c) hozirgi birlashtiruvchi writePlan yetarli deb qabul qilish.
+   Men (a) ni tavsiya qilaman — u qorovulni chaqiruvchidan olib,
+   omborning O'ZIGA qo'yadi.
+
+2. DESLOP (ai-slop-cleaner ko'nikmasi) — o'zgargan fayllar to'plamida.
+   O'zgargan/yangi: 27 fayl, +3378/-897 qator.
+   git status --short bilan ro'yxatni oling.
+
+3. YAKUNIY REGRESSIYA + hujjat tekshiruvi
+   npm test && npm run build, so'ng PLAN.md §11 dagi 10 invariantni
+   kodga qarshi qayta tekshirish (men 9 tasini tekshirganman, 10-si
+   "nisbat izchil oynadan" — u yangi qo'shildi).
+
+KO'RIK TOPILMALARIDAN QOLGAN KICHIKLAR (bloklamaydi)
+-----------------------------------------------------
+- rankWords har qator uchun decayRow ni IKKI marta chaqiradi (globalErrorRate
+  ichida va reyting siklida). Natija to'g'ri, 9500 qatorda ~2x ortiqcha ish.
+- previousSession endedAt TENG bo'lgan seansni "oldingi" deb qabul qiladi.
+- dailySeries MAX_SERIES_DAYS = 3660, UI esa faqat 14/30 beradi — o'lik shox.
+- measureBeta m-hat ni UMRBOD taqsimotdan baholaydi, shrunkScore esa uni
+  SO'NUVCHI hisoblagichlarga qo'llaydi. Diagnostik son sifatida oqlanadi,
+  lekin ikkala taqsimotning m i tizimli farq qiladimi — O'LCHANMAGAN (M4).
+- Stats.tsx 9 ta parallel tranzaksiya ochadi (words bo'yicha 4 to'liq getAll).
+  9500 qatorda qancha vaqt olishi O'LCHANMAGAN.

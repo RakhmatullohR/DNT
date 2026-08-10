@@ -10,10 +10,13 @@ import { Link } from 'react-router-dom'
 import { DEFAULT_RATE, DEFAULT_VOICE, RATES, VOICES } from '../../shared/filename.ts'
 import { Button } from '../components/Button.tsx'
 import { EmptyState } from '../components/EmptyState.tsx'
+import { StatsBanner } from '../components/StatsBanner.tsx'
+import { dayNumberToKey } from '../core/wordScore.ts'
 import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
 import { deleteLesson, getLesson, listLessons, saveLesson, setProgress } from '../store/lessons.ts'
 import type { Lesson } from '../store/lessons.ts'
-import { streakDays, totals } from '../store/stats.ts'
+import { initStats, streakDays, totals } from '../store/stats.ts'
+import type { StatsAvailability, Totals } from '../store/stats.ts'
 
 const PANEL = 'rounded-panel border border-white/[0.07] bg-[#0e141c]'
 const LABEL = 'font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-muted'
@@ -153,16 +156,55 @@ function downloadSentences(lesson: Lesson): void {
 // Yig'indi
 // ---------------------------------------------------------------------------
 
-type Summary = {
-  sessions: number
-  activeMs: number
-  netWpm: number
-  accuracy: number
-  streak: number
+/**
+ * Yuqoridagi beshta raqamning holati.
+ *
+ * ⚠️ UCH holat, ikkita emas (docs/stats-longterm.md §4.3, F4):
+ *
+ *   `null`                — hali YUKLANMAGAN (ombor asinxron);
+ *   `{ totals: null }`    — umrbod konvert YO'Q. Bu "hammasi nol" DEGANI EMAS:
+ *                           nol ko'rsatish qisman yoki noma'lum holatni
+ *                           "umrbod hech narsa qilmagansiz" deb ko'rsatardi;
+ *   `{ totals: {...} }`   — o'lchangan.
+ *
+ * Uchalasi ekranda ham FARQ QILADI (`PENDING` / `UNKNOWN` / son).
+ */
+type Summary = { totals: Totals | null; streak: number }
+
+/** Hali yuklanmagan qiymat. */
+const PENDING = '…'
+/**
+ * O'lchanmagan qiymat — nol EMAS (`PLAN.md` §11.3, 4-invariant).
+ *
+ * Ikki holatda chiqadi: umrbod konvert topilmaganda VA nisbat (`netWpm`,
+ * `accuracy`) `null` bo'lganda, ya'ni ularni izchil o'lchash uchun yetarli
+ * oyna hali yo'q. Bu ekrandagi «—» ning o'zbekcha yozilishi.
+ */
+const UNKNOWN = "noma'lum"
+/** O'qish XATO bilan tugadi — `PENDING` da abadiy osilib qolmaslik uchun. */
+const FAILED = 'xato'
+
+/**
+ * `*Since` si bor maydon `≥ N` bo'lib chiziladi (§4.3).
+ *
+ * ⚠️ FAQAT XOM, MONOTON hisoblagichlarga (`sessions`, `keystrokes`, `activeMs`)
+ * qo'llanadi. NISBATGA (`netWpm`, `accuracy`) qo'llash MUMKIN EMAS va bu shu
+ * yerda o'lchangan xato edi: nisbat monoton emas — yangi ma'lumot uni
+ * PASAYTIRISHI ham mumkin, ya'ni "ko'rsatilgandan kam emas" degan va'da
+ * yolg'on bo'lardi. Amalda ekran haqiqiy 96% o'rniga «≥ 100.0%» chizardi.
+ *
+ * Sabab jadvalda: `sessions` va `keystrokes` faqat OMON QOLGAN seanslardan
+ * bilinadi, `activeMs` esa `days` dan ANIQ. Ularni bir xil ko'rsatish qisman
+ * sonni yalang'och umrbod raqam qilib qo'yardi — §4.3 aynan shu xatoning
+ * oldini olish uchun yozilgan.
+ */
+function partial(value: string, since: number | undefined): string {
+  return since === undefined ? value : `≥ ${value}`
 }
 
-function readSummary(): Summary {
-  return { ...totals(), streak: streakDays() }
+/** Xato matni — `unknown` dan foydalanuvchiga ko'rsatiladigan satr. */
+function errorText(err: unknown): string {
+  return err instanceof Error && err.message !== '' ? err.message : String(err)
 }
 
 /** Uzilmas bo'shliq — son bilan uning birligini bir-biridan ajratmaydi. */
@@ -537,7 +579,16 @@ export function Home() {
   // ichida chaqirsak, o'chirishdan keyin React qayta render qilish uchun sabab
   // ko'rmaydi va o'chirilgan dars ekranda qolib ketardi.
   const [lessons, setLessons] = useState<Lesson[]>(() => listLessons())
-  const [summary] = useState<Summary>(readSummary)
+  // `null` — hali yuklanmagan. Statistika endi IndexedDB'da, ya'ni uni render
+  // paytida sinxron o'qib bo'lmaydi (docs/stats-longterm.md §3.2a).
+  const [summary, setSummary] = useState<Summary | null>(null)
+  // Banner uchun (§8.4d). Boshlang'ich `ready`: ombor odatda ishlaydi va
+  // yuklanish paytida ogohlantirish miltillab ketishi kerak emas.
+  const [availability, setAvailability] = useState<StatsAvailability>('ready')
+  // Yuklash XATO bilan tugadi. `summary` abadiy `null` bo'lib qolganda ekran
+  // jimgina "…" ko'rsatib turardi — foydalanuvchi kutayotgan narsa hech qachon
+  // kelmasligini bilmasdi.
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
   const [restartUndo, setRestartUndo] = useState<RestartUndo | null>(null)
@@ -545,6 +596,41 @@ export function Home() {
   // O'chirishdan keyin fokus shu sarlavhaga qo'yiladi — u ro'yxat chizilganda
   // ham, bo'sh holat chizilganda ham joyida qoladigan yagona nuqta.
   const headingRef = useRef<HTMLHeadingElement>(null)
+
+  // Statistikani yuklash. `initStats()` AVVAL kutiladi (§9): u boot'da
+  // `main.tsx` dan ham chaqirilgan, lekin natijasi kutilmagan — ya'ni bu yerda
+  // to'g'ridan-to'g'ri o'qish migratsiya tugamasdan bo'sh omborni ko'rishi
+  // mumkin edi.
+  //
+  // `cancelled` SHART: foydalanuvchi javob kelgunicha boshqa ekranga o'tsa,
+  // uzilgan komponentda `setState` chaqirilardi. Bu yerda effekt bir marta
+  // ishlaydi, lekin naqsh boshqa ekranlarniki bilan bir xil.
+  //
+  // ⚠️ TARTIB MUHIM: `setAvailability` `initStats()` dan DARHOL keyin, o'qishlardan
+  // OLDIN chaqiriladi. Ilgari u o'qishlardan KEYIN turardi va `blocked` banneri
+  // HECH QACHON chiqmasdi: `statsDb.ts` `onblocked` dan keyin so'rovni saqlab
+  // qo'yadi, ya'ni keyingi `openDb()` yangi so'rov chiqarmaydi va `totals()`
+  // bloklovchi tab yopilmaguncha umuman hal bo'lmaydi — `setAvailability` ga
+  // esa navbat yetmasdi. `Stats.tsx` buni boshidan to'g'ri qilgan.
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const state = await initStats()
+      if (!cancelled) setAvailability(state)
+      const [value, streak] = await Promise.all([totals(), streakDays()])
+      if (cancelled) return
+      setSummary({ totals: value, streak })
+    })().catch((err: unknown) => {
+      // `withStatsDb` `InvalidStateError` dan boshqa xatolarni QAYTA TASHLAYDI,
+      // ya'ni bu shox haqiqiy. `.catch` siz bu boshqarilmagan rad javobi bo'lib,
+      // ekran abadiy "…" da qolib ketardi.
+      if (cancelled) return
+      setLoadError(errorText(err))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // "Boshidan" oynasining taymeri. Ref da: o'zgarishi qayta renderni talab
   // qilmaydi, faqat keyingi bosishda eskisini bekor qilish uchun kerak.
@@ -666,18 +752,107 @@ export function Home() {
           {/* Tartib Stats.tsx bilan KANONIK: net wpm -> aniqlik -> seans -> faol
               vaqt -> seriya. Bir xil beshta raqam ikki ekranda boshqa tartibda
               turishi "Batafsil" bosgan foydalanuvchini chalg'itardi. */}
+          {/* ⚠️ `netWpm` — NISBAT, shuning uchun `partial` (ya'ni «≥») unga
+              QO'LLANMAYDI: `partial` izohiga qarang. `null` esa "izchil oyna
+              yo'q" degani — nol ham, taxmin ham emas. */}
           <Stat
             label="net wpm"
-            value={formatWpm(summary.netWpm)}
+            value={
+              loadError !== null
+                ? FAILED
+                : summary === null
+                  ? PENDING
+                  : summary.totals === null || summary.totals.netWpm === null
+                    ? UNKNOWN
+                    : formatWpm(summary.totals.netWpm)
+            }
             accent
             hint="Faol vaqtga og'irliklangan"
           />
-          <Stat label="aniqlik" value={formatPercent(summary.accuracy)} />
-          <Stat label="seans" value={String(summary.sessions)} />
-          <Stat label="faol vaqt" value={formatDuration(summary.activeMs)} />
-          <Stat label="seriya" value={`${summary.streak} kun`} />
+          <Stat
+            label="aniqlik"
+            value={
+              loadError !== null
+                ? FAILED
+                : summary === null
+                  ? PENDING
+                  : summary.totals === null || summary.totals.accuracy === null
+                    ? UNKNOWN
+                    : formatPercent(summary.totals.accuracy)
+            }
+          />
+          <Stat
+            label="seans"
+            value={
+              loadError !== null
+                ? FAILED
+                : summary === null
+                  ? PENDING
+                  : summary.totals === null
+                    ? UNKNOWN
+                    : // `≥` AYNAN shu yerda o'rinli: `sessions` — xom, MONOTON
+                      // hisoblagich, ya'ni haqiqiy qiymat ko'rsatilgandan faqat
+                      // KO'P bo'lishi mumkin (§4.3 jadvali).
+                      partial(String(summary.totals.sessions), summary.totals.sessionsSince)
+            }
+          />
+          <Stat
+            label="faol vaqt"
+            value={
+              loadError !== null
+                ? FAILED
+                : summary === null
+                  ? PENDING
+                  : summary.totals === null
+                    ? UNKNOWN
+                    : // ⚠️ `≥` YO'Q va bu ATAYIN: `activeMs` `days` do'konidan
+                      // ANIQ bilinadi (`days` hech qachon qisqartirilmaydi), ya'ni
+                      // unga "falon sanadan beri" belgisini qo'yish aniq sonni
+                      // noaniq qilib ko'rsatardi (§4.3 jadvali).
+                      formatDuration(summary.totals.activeMs)
+            }
+          />
+          <Stat
+            label="seriya"
+            value={loadError !== null ? FAILED : summary === null ? PENDING : `${summary.streak} kun`}
+          />
         </dl>
+
+        {loadError !== null ? (
+          <p className="mt-3 font-mono text-[11px] leading-relaxed text-[#f2cf8a]">
+            Statistikani o&apos;qib bo&apos;lmadi ({loadError}). Mashq ishlayveradi — faqat
+            shu yerdagi raqamlar ko&apos;rsatilmaydi.
+          </p>
+        ) : null}
+
+        {/* `*Since` belgisi bir marta izohlanadi — beshta qatorga takrorlanmaydi. */}
+        {summary?.totals?.sessionsSince !== undefined ? (
+          <p className="mt-3 font-mono text-[11px] leading-relaxed text-muted">
+            «≥» belgisi qo&apos;yilgan raqamlar migratsiyada faqat qisman
+            tiklangan: ular ko&apos;rsatilgandan KAM emas, lekin undan ko&apos;p
+            bo&apos;lishi mumkin.
+          </p>
+        ) : null}
+
+        {/* ⚠️ Bu `sessionsSince` DAN BOSHQA narsa: u XOM hisoblagichga tegishli,
+            bu esa NISBATGA. Nisbatning surati bilan maxraji AYNAN bir davrni
+            qamrashi shart, shuning uchun ombor ularni faqat izchil oynadan
+            hisoblaydi — va oyna qaysi kundan boshlanganini aytib qo'yish shart,
+            aks holda raqam butun tarixniki bo'lib ko'rinardi. */}
+        {summary?.totals?.ratiosSince !== undefined ? (
+          <p className="mt-3 font-mono text-[11px] leading-relaxed text-muted">
+            net wpm va aniqlik{' '}
+            <span className="text-[#e6edf3]">
+              {dayNumberToKey(summary.totals.ratiosSince)}
+            </span>{' '}
+            dan beri o&apos;lchangan kunlardan hisoblangan — undan oldingi kunlar
+            bunga kirmaydi. Ularga «≥» qo&apos;yilmaydi: nisbat monoton emas, u
+            keyingi ma&apos;lumot bilan pasayishi ham mumkin.
+          </p>
+        ) : null}
       </section>
+
+      <StatsBanner availability={availability} />
 
       <section>
         {/* E'lon hududi DOIM chiziladi: bo'sh joyga keyin qo'shilgan

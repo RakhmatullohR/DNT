@@ -1,8 +1,10 @@
 # Statistikani yillar davomida saqlash — tahlil va taklif
 
-**Holat:** taklif, qaror kutilmoqda. Kod hali o'zgarmagan.
-**Sana:** 2026-08-09.
-**Aloqador:** `PLAN.md` §6 (statistika) va `PLAN.md` §10 (xatarlar); `src/store/stats.ts`.
+**Holat:** ✅ **qabul qilindi va amalga oshirildi.** §11 dagi beshta ochiq savolga javob berilgan (pastda, §11 da har birining tagida qayd etilgan). Bajarilgan ish `PLAN.md` §11 da qisqartirilgan; bu hujjat **asoslash manbai** bo'lib qoladi — qaror nima uchun shunday qabul qilinganini shu yerdan qidiring.
+**Sana:** 2026-08-09 (taklif), amalga oshirildi 2026-08-09.
+**Aloqador:** `PLAN.md` §6 (statistika), `PLAN.md` §10 (xatarlar) va `PLAN.md` §11 (qarorlar registri); `src/core/wordScore.ts`, `src/store/stats.ts`, `src/store/statsSchema.ts`, `src/store/statsDb.ts`, `src/store/statsMigrate.ts`, `src/store/statsCompact.ts`, `src/store/persist.ts`.
+
+> ⚠️ **Bu hujjat TAKLIF tilida yozilgan** ("taklif etilayotgan sxema", "qaror sizniki") va u ataylab shunday qoldirilgan: uni o'tgan zamonga tarjima qilish tahlilning borishini — qaysi nomzod nega rad etilganini — o'chirib yuborardi. Amaldagi holat uchun `PLAN.md` §11 ga qarang.
 *(Eslatma: `§N` yolg'iz yozilsa — shu hujjatning bo'limi; `PLAN.md` bo'limlari doim shunday to'liq nomlanadi.)*
 **Tashqi manbalar:** §15.
 
@@ -363,9 +365,26 @@ Tartib ag'dariladigan nuqta `m` ga bog'liq: `g = (9 − 40/m) / 49`.
 | 20 | **0.143** ← tanlangan qiymatning haqiqiy zaxirasi |
 | ∞ | 0.184 (nazariy chegara) |
 
-Shuning uchun `m = 20` tanlangan: `m = 10` da zaxira `g = 0.102` da tugaydi, `m = 20` da esa `g = 0.143` gacha cho'ziladi. **Lekin hech qanday `m` `g ≥ 9/49 ≈ 0.184` da ishlamaydi.** Va `g` kutilganidan yuqori chiqishi mumkin: xatolar klavish darajasida sanaladi (`useTypingSession.ts:491` — `errorCounts` yig'indisi), ya'ni bitta so'zdagi uchta noto'g'ri harf uchta xato bo'lib hisoblanadi.
+Shuning uchun `m = 20` tanlangan: `m = 10` da zaxira `g = 0.102` da tugaydi, `m = 20` da esa `g = 0.143` gacha cho'ziladi. **Lekin hech qanday `m` `g ≥ 9/49 ≈ 0.184` da ishlamaydi.**
+
+~~Va `g` kutilganidan yuqori chiqishi mumkin: xatolar klavish darajasida sanaladi (`useTypingSession.ts:491` — `errorCounts` yig'indisi), ya'ni bitta so'zdagi uchta noto'g'ri harf uchta xato bo'lib hisoblanadi.~~
+✅ **Bu xatar amalga oshirishda YOPILDI** (pastdagi izohga qarang): xato endi ta'sirlanish darajasida sanaladi, ya'ni `g` haqiqiy ulush va u shu jadvaldagi chegaralardan tabiiy ravishda pastroq turadi.
 
 **Xulosa: haqiqiy kafolat formula emas — minimal ta'sirlanish to'sig'i.** Bu §11.4 ni hujjatdagi eng muhim ochiq savolga aylantiradi.
+
+> ✅ **AMALGA OSHIRISHDA TUZATILDI — xato endi TA'SIRLANISH darajasida sanaladi.**
+>
+> Yuqoridagi xatboshi ("bitta so'zdagi uchta noto'g'ri harf uchta xato") amalga oshirish paytida **ikkita** nuqsonga olib kelishi aniqlandi:
+>
+> 1. **`errors > exposures` bo'lishi qisqichni talab qilardi, qisqich esa TARTIBGA BOG'LIQ edi.** Ayni mashq tarixi, faqat seanslar tartibi boshqa: `{e:1,x:3}` → `{e:5,x:0}` **17%** beradi, teskarisi esa **50%**. Buzilish umrbod `errors` da — foydalanuvchi aynan so'ragan raqamda — va kesilgan farq na diskda, na seanslarda qolmaydi, ya'ni tiklab bo'lmaydi.
+> 2. **Qisqich xato OG'IRLIGINI baribir yo'q qilardi.** `{e:1,x:1}` × 10 va `{e:1,x:5}` × 10 qisqichdan keyin **baytma-bayt bir xil** qatorga tushadi. Ya'ni klavish darajasidagi sanoq hech qachon ekranga yetib bormasdi.
+> 3. **§6.3 bilan birlik nomuvofiqligi.** `estimateBeta` `p_i = errors_i / exposures_i` ni **binomial ulush** deb modellaydi (`Var(p_i) = Var(θ) + E[θ(1−θ)]·E[1/n_i]` hadi aynan shuni talab qiladi). Klavish sanog'ida `p_i` umuman ulush emas, ya'ni §6.3 apparati noto'g'ri birlik ustida ishlardi.
+>
+> **Qaror:** qisqich MANBAGA ko'chirildi — `useTypingSession` xatoni `min(errorCounts, 1)` bilan yozadi. Endi `x` = *"bu so'z necha marta xato bilan yozilgan"*, klavish xatolari soni emas.
+>
+> Bu foydalanuvchining so'roviga ham **yaqinroq**: *"nechi marta xato yozilganini"* — uch harfni chalkashtirish "uch marta xato yozish" emas. Yon foyda: `x ≤ e` qurilish bo'yicha o'rinli, natija tartibdan mustaqil, `g` haqiqiy ulushga aylanadi va shu jadvaldagi chegaralardan **pastroq** turadi — ya'ni siljish xavfsiz tomonga.
+>
+> ⚠️ **Almashuv:** xato og'irligi (bitta so'zda nechta harf xato qilingani) endi umuman saqlanmaydi. Yuqorida ko'rsatilganidek u qisqich tufayli **allaqachon** yo'qolgan edi, shuning uchun bu yangi yo'qotish emas — lekin kerak bo'lsa alohida hisoblagich sifatida keyin qo'shilishi mumkin.
 
 ### 6.3. `m` ni ma'lumotdan baholash mumkin
 
@@ -585,6 +604,18 @@ type StatsFile = { version: 2; kind: 'stats'; words: […]; days: […]; session
 ---
 
 ## 11. Ochiq savollar — siz hal qilasiz
+
+> ✅ **HAMMASIGA JAVOB BERILDI.** Quyidagi savollar dastlab ochiq qoldirilgan edi; qabul qilingan javoblar shu yerda. Savol matnlari o'zgartirilmagan — ular qarorning nima uchun qiyin bo'lganini saqlab turadi.
+>
+> | Savol | Javob | Kim hal qildi |
+> |---|---|---|
+> | **11.1** Raqamli id kerakmi? | **Yo'q — `keyPath: 'w'`.** Hujjatning o'z tavsiyasi qabul qilindi | foydalanuvchi |
+> | **11.2** 90 kunlik half-life to'g'rimi? | **Ha, MVP uchun.** `HALF_LIFE_DAYS` eksport qilinadigan konstanta va kodda ham, `PLAN.md` §11 da ham "MVP soddalashtirishi, sanoat standarti EMAS" deb belgilangan | hujjat |
+> | **11.3** `fake-indexeddb` qo'shilsinmi? | **Ha, devDependency.** Adapter varianti §8.4 ning to'rtta tuzog'ini aynan testsiz qoldirardi — ular esa M2 ning qabul qilish mezoni | Claude |
+> | **11.4** ⭐ Minimal ta'sirlanish to'sig'i | **Hozirgi farq saqlanadi** (Statistika 5, Natijalar 1). Ustiga `measureG()` Statistika ekranida ko'rsatiladi va `g ≥ 0.143` da ogohlantirish chiqadi — §6.2 dagi xatar endi jimgina emas, KO'RINADIGAN | Claude |
+> | **11.5** O'lchov tizimimi yoki o'qitish? | **O'lchov.** SRS qo'shilmadi; poydevor (`l`, `de`/`dx`, `s`/`b`) §7.1 dagidek mos qoldirildi | hujjat |
+>
+> ⚠️ **11.4 ga qo'shimcha, §6.3 ga taalluqli tuzatish.** Amalga oshirish paytida `estimateBeta` ning dastlabki ko'rinishi kuzatilgan nisbatlarga **sof Beta** momentlarini qo'llagani aniqlandi — §6.3 va §15 iqtibos qilgan **beta-binomial** emas. Farq amaliy: `Var(p_i) = Var(θ) + E[θ(1−θ)]·E[1/n_i]`, ya'ni binomial had dispersiyani shishiradi va `m̂` ni pasaytiradi. Beta(2, 23) simulyatsiyasida (haqiqiy `m = 25`) `exposures = 2000` da `m̂ = 27.6`, lekin **haqiqiy so'z jadvalida (`exposures` 1–20) `m̂ ≈ 3`** — §6.2 talab qiladigan `m > 7.9` dan pastda. Tuzatilmaganda M4 dagi "konstantani ma'lumot bilan tekshirib turish" `m = 20` ni "juda katta" deb ko'rsatib, uni pasaytirishga undardi va reytingni aynan §6.2 ogohlantirgan tarzda ag'darardi. Binomial had ayirildi.
 
 **11.1. ⭐ Raqamli id kerakmi?**
 §2.5 dagi tahlil. `keyPath: 'w'` kamroq mexanizm bilan bir xil natija beradi; raqamli id faqat kalit qoidasi kelajakda o'zgarganda yutadi. **Tavsiya: `keyPath: 'w'`.** Siz "bitta id" so'ragansiz — shuning uchun bu qarorni yashirmasdan sizga qaytaraman.

@@ -2,22 +2,34 @@
 // Marshrut: '/results/:sessionId'.
 //
 // MA'LUM CHEKLOV (integratsiya uchun muhim): `SessionRecord` ichida SO'Z bo'yicha
-// xato hisobi saqlanmaydi — `recordSession(session, wordDelta)` dagi `wordDelta`
-// umumiy `words` jadvaliga qo'shilib ketadi va seansga bog'lanmaydi. Shuning uchun
-// bu yerdagi "qiyin so'zlar" ro'yxati SHU SEANSDA uchragan so'zlar bilan
-// cheklanadi, xato ulushi esa BUTUN tarix bo'yicha hisoblanadi (PLAN §6 dagi
-// "ta'sirlanishga nisbatan" qoidasi shu tarzda saqlanadi). Bu ekranda ochiq
-// yozib qo'yilgan — foydalanuvchi ko'rsatkich qayerdan kelganini bilishi kerak.
+// xato hisobi saqlanmaydi — `writeSentences` uzatgan so'z deltasi `words`
+// do'koniga qo'shilib ketadi va seansga bog'lanmaydi. Shuning uchun bu yerdagi
+// "qiyin so'zlar" ro'yxati SHU SEANSDA uchragan so'zlar bilan cheklanadi, xato
+// ulushi esa BUTUN tarix bo'yicha hisoblanadi (PLAN §6 dagi "ta'sirlanishga
+// nisbatan" qoidasi shu tarzda saqlanadi). Bu ekranda ochiq yozib qo'yilgan —
+// foydalanuvchi ko'rsatkich qayerdan kelganini bilishi kerak.
+//
+// M3 (docs/stats-longterm.md §9.4): ombor IndexedDB'ga ko'chdi, ya'ni bu
+// ekrandagi to'rtta o'qish ham ASINXRON. Ular BITTA effektda, bitta
+// `cancelled` qorovuli bilan yuklanadi.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { tokenize } from '../core/tokenize.ts'
 import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
 import { getLesson } from '../store/lessons.ts'
-import { getSession, hardestWords, loadStats, streakDays } from '../store/stats.ts'
-import type { SessionRecord } from '../store/stats.ts'
+import type { Lesson } from '../store/lessons.ts'
+import {
+  getSession,
+  hardestWords,
+  initStats,
+  previousSession,
+  streakDays,
+} from '../store/stats.ts'
+import type { HardWordRow, SessionRecord, StatsAvailability } from '../store/stats.ts'
 import { Sparkline } from '../components/Sparkline.tsx'
+import { StatsBanner } from '../components/StatsBanner.tsx'
 
 const PANEL = 'rounded-panel border border-white/[0.07] bg-[#0e141c]'
 const LABEL = 'font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-[#7d8b9c]'
@@ -71,6 +83,11 @@ function formatWpmDelta(delta: number): string {
   const rounded = Math.round(delta)
   if (rounded === 0) return "o'zgarishsiz"
   return `${rounded > 0 ? '+' : ''}${rounded} wpm`
+}
+
+/** Xato matni — `unknown` dan foydalanuvchiga ko'rsatiladigan satr. */
+function errorText(err: unknown): string {
+  return err instanceof Error && err.message !== '' ? err.message : String(err)
 }
 
 // ---------------------------------------------------------------------------
@@ -145,11 +162,26 @@ function Metric({
   )
 }
 
-function NotFound({ sessionId }: { sessionId: string }) {
+function NotFound({
+  sessionId,
+  availability,
+}: {
+  sessionId: string
+  availability: StatsAvailability
+}) {
   return (
     // `Layout.tsx` allaqachon <main>, markazlash va yon bo'shliqni beradi —
     // bu yerda faqat matnni torroq ustunga siqish qoladi.
     <div className="mx-auto w-full max-w-3xl">
+      {/* (§8.4d) Banner AYNAN shu shoxda ham kerak: `unavailable` holatda
+          `getSession()` hech narsa topolmaydi va ekran "yozuv yo'q" deb
+          ko'rsatadi — sababi esa yozuvning o'chirilgani emas, omborning umuman
+          yo'qligi. Bannersiz bu ikkovi bir xil ko'rinardi. */}
+      {availability !== 'ready' ? (
+        <div className="mb-4">
+          <StatsBanner availability={availability} />
+        </div>
+      ) : null}
       <Reveal>
         <div className={`${PANEL} p-8 text-center sm:p-12`}>
           <div className={LABEL}>seans topilmadi</div>
@@ -180,19 +212,21 @@ function NotFound({ sessionId }: { sessionId: string }) {
 // Seansdagi qiyin so'zlar
 // ---------------------------------------------------------------------------
 
-type WordRow = { word: string; exposures: number; errors: number; rate: number }
+/** `HardWordRow` bilan bir xil (M1): `score`/`lastDay` shu yerda ishlatilmaydi, lekin turni ikkilantirmaslik uchun to'g'ridan-to'g'ri ulanadi. */
+type WordRow = HardWordRow
 
 /**
  * Shu seansda TERILGAN gaplardagi so'zlar to'plamini yig'adi va ular ichidan
- * xato ulushi eng yuqori bo'lganlarini qaytaradi.
+ * `hardestWords()` allaqachon ball bo'yicha tartiblagan ro'yxatdan eng qiyin
+ * bo'lganlarini qaytaradi (M1: tartib xato ulushi emas, so'nuvchi ball —
+ * `stats.ts` dagi `hardestWords` izohiga qarang).
  *
  * `hardestWords(1, ...)` chaqiriladi — chegara 1 ga tushiriladi, chunki bitta
  * seansdan keyin ko'p so'z hali 5 martadan kam uchragan bo'ladi va standart
  * chegara bilan ro'yxat doim bo'sh chiqardi. Umumiy Statistika ekranida esa
  * PLAN §6 dagi 5 martalik chegara saqlanadi.
  */
-function sessionWordRows(session: SessionRecord): WordRow[] {
-  const lesson = getLesson(session.lessonId)
+async function sessionWordRows(session: SessionRecord, lesson: Lesson | null): Promise<WordRow[]> {
   if (lesson === null) return []
 
   const seen = new Set<string>()
@@ -208,7 +242,7 @@ function sessionWordRows(session: SessionRecord): WordRow[] {
   if (seen.size === 0) return []
 
   const rows: WordRow[] = []
-  for (const row of hardestWords(1, 5_000)) {
+  for (const row of await hardestWords(1, 5_000)) {
     if (row.errors === 0) continue
     if (!seen.has(row.word)) continue
     rows.push(row)
@@ -218,54 +252,146 @@ function sessionWordRows(session: SessionRecord): WordRow[] {
 }
 
 // ---------------------------------------------------------------------------
-// Taqqoslash konteksti — bu seansdan OLDINGI seansni topadi
-// ---------------------------------------------------------------------------
-
-/**
- * `startedAt` bo'yicha saralangan seanslar ro'yxatida shu seansdan bevosita
- * oldingisi. Birinchi seans bo'lsa (yoki hozirgisi ro'yxatda topilmasa)
- * `null` — chaqiruvchi taqqoslash qatorini shunchaki chizmaydi.
- */
-function previousSession(current: SessionRecord): SessionRecord | null {
-  const ordered = [...loadStats().sessions].sort((a, b) => a.startedAt - b.startedAt)
-  const index = ordered.findIndex((item) => item.id === current.id)
-  return index > 0 ? (ordered[index - 1] ?? null) : null
-}
-
-// ---------------------------------------------------------------------------
 // Ekran
 // ---------------------------------------------------------------------------
+
+/** Ekranga kerak bo'lgan hamma narsa — BITTA asinxron yuklashda. */
+type Loaded = {
+  session: SessionRecord | null
+  words: WordRow[]
+  lesson: Lesson | null
+  previous: SessionRecord | null
+  streak: number
+}
 
 export function Results() {
   const params = useParams()
   const sessionId = params['sessionId'] ?? ''
 
-  // `localStorage` dan faqat `sessionId` o'zgarganda o'qiladi. `useState`
-  // ishlatilmaydi: react-router bir marshrutning ichida komponentni QAYTA
-  // ULAMAYDI, ya'ni boshqa seansga o'tilganda eski yozuv ekranda qolib ketardi.
-  //
-  // `lesson` shu yerda ham o'qiladi (`sessionWordRows` ichida allaqachon
-  // chaqirilgani uchun arzon): "Davom ettirish" darsning o'zi o'chirilganmi
-  // yoki tugaganmi bilishi kerak, buni faqat `session.lessonId` bo'sh emasligi
-  // bilan tekshirib bo'lmaydi.
-  const { session, words, lesson, previous } = useMemo(() => {
-    const found: SessionRecord | null = sessionId === '' ? null : getSession(sessionId)
-    return {
-      session: found,
-      words: found === null ? [] : sessionWordRows(found),
-      lesson: found === null ? null : getLesson(found.lessonId),
-      previous: found === null ? null : previousSession(found),
+  // `null` — hali yuklanmagan. Ombor endi IndexedDB'da, ya'ni render paytida
+  // sinxron o'qib bo'lmaydi (docs/stats-longterm.md §3.2a) va eski `useMemo`
+  // yo'li ishlamaydi.
+  const [data, setData] = useState<Loaded | null>(null)
+  const [availability, setAvailability] = useState<StatsAvailability>('ready')
+  // Yuklash XATO bilan tugadi. `data` abadiy `null` bo'lib qolganda ekran
+  // «Seans yakuni o'qilmoqda…» da qotib qolardi va sabab hech qayerda
+  // ko'rinmasdi.
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  useEffect(() => {
+    // ⚠️ POYGA QOROVULI. `sessionId` marshrut ichida o'zgarishi mumkin
+    // (Statistika ekranidagi ro'yxatdan boshqa seansga o'tish), va react-router
+    // bunda komponentni QAYTA ULAMAYDI. Bayroqsiz sekinroq tugagan ESKI yuklash
+    // yangi seansning natijasini bosib ketardi.
+    let cancelled = false
+    // Boshqa seansga o'tilganda eski xato qolib ketmasin: yangi `sessionId`
+    // uchun yuklash BOSHIDAN boshlanadi.
+    setLoadError(null)
+
+    void (async () => {
+      // Migratsiya tugashini kutamiz (§9): aks holda seans hali ko'chirilmagan
+      // bo'lib, ekran "bu seans yozuvi yo'q" deb yolg'on aytardi.
+      //
+      // ⚠️ TARTIB MUHIM: `setAvailability` `initStats()` dan DARHOL keyin, hech
+      // qanday o'qishdan OLDIN. Ilgari u o'qishlardan KEYIN turardi va `blocked`
+      // banneri HECH QACHON chiqmasdi: `statsDb.ts` `onblocked` dan keyin
+      // so'rovni saqlab qo'yadi, ya'ni keyingi `openDb()` yangi so'rov
+      // chiqarmaydi va `getSession()` bloklovchi tab yopilmaguncha umuman hal
+      // bo'lmaydi — `setAvailability` ga navbat yetmasdi. `Stats.tsx` buni
+      // boshidan to'g'ri qilgan.
+      const state = await initStats()
+      if (!cancelled) setAvailability(state)
+
+      const found = sessionId === '' ? null : await getSession(sessionId)
+
+      if (found === null) {
+        if (cancelled) return
+        setData({ session: null, words: [], lesson: null, previous: null, streak: 0 })
+        return
+      }
+
+      // Dars `localStorage` dan (sinxron) — u hali IndexedDB'ga ko'chmagan.
+      // Bir marta o'qiladi va IKKI joyda ishlatiladi: so'zlar ro'yxati va
+      // "Davom ettirish" tugmasining yorlig'i.
+      const lesson = getLesson(found.lessonId)
+      const [words, previous, streak] = await Promise.all([
+        sessionWordRows(found, lesson),
+        previousSession(found),
+        streakDays(),
+      ])
+
+      if (cancelled) return
+      setData({ session: found, words, lesson, previous, streak })
+    })().catch((err: unknown) => {
+      // `withStatsDb` `InvalidStateError` dan boshqa xatolarni QAYTA TASHLAYDI,
+      // ya'ni bu shox haqiqiy. `.catch` siz bu boshqarilmagan rad javobi bo'lib,
+      // ekran abadiy «yuklanmoqda» da qolib ketardi.
+      if (cancelled) return
+      setLoadError(errorText(err))
+    })
+
+    return () => {
+      cancelled = true
     }
   }, [sessionId])
 
-  // Sarlavha SESSIYA HOLATIGA qarab tanlanadi, shuning uchun hook har ikki
-  // holatda ham (topilgan/topilmagan) bir xil tartibda chaqiriladi — u pastdagi
-  // erta `return` dan OLDIN turishi shart (React Hooks qoidasi).
+  const session = data?.session ?? null
+
+  // Sarlavha SESSIYA HOLATIGA qarab tanlanadi, shuning uchun hook har uchala
+  // holatda ham (yuklanmoqda/topilgan/topilmagan) bir xil tartibda chaqiriladi —
+  // u pastdagi erta `return` lardan OLDIN turishi shart (React Hooks qoidasi).
   const lessonTitle =
     session === null ? '' : session.lessonTitle === '' ? 'Nomsiz dars' : session.lessonTitle
-  useDocumentTitle(session === null ? 'Topilmadi' : `${lessonTitle} — seans yakuni`)
+  useDocumentTitle(
+    loadError !== null
+      ? 'Xato'
+      : data === null
+        ? 'Yuklanmoqda'
+        : session === null
+          ? 'Topilmadi'
+          : `${lessonTitle} — seans yakuni`,
+  )
 
-  if (session === null) return <NotFound sessionId={sessionId} />
+  // ⚠️ Yuklanish holati "topilmadi" dan ALOHIDA: ikkisini birlashtirish har
+  // seans yakunida bir lahzaga "Bu seans yozuvi yo'q" ni ko'rsatardi — ya'ni
+  // ekran mashqni endi tugatgan foydalanuvchiga uni yo'qotgandek tuyulardi.
+  if (data === null) {
+    return (
+      <div className="mx-auto w-full max-w-3xl">
+        {/* (§8.4d) Banner AYNAN shu shoxda ham kerak va u eng muhimi: ombor
+            `blocked` bo'lsa o'qishlar umuman hal bo'lmaydi, ya'ni `data` hech
+            qachon to'lmaydi va ekran MANGU shu shoxda qoladi. Banner faqat
+            pastdagi asosiy daraxtda tursa, foydalanuvchi sababni ko'rmasdi. */}
+        {availability !== 'ready' ? (
+          <div className="mb-4">
+            <StatsBanner availability={availability} />
+          </div>
+        ) : null}
+        <div className={`${PANEL} p-8 text-center sm:p-12`}>
+          {loadError === null ? (
+            <>
+              <div className={LABEL}>yuklanmoqda</div>
+              <p className="mt-4 font-mono text-[13px] text-[#8b98a9]">
+                Seans yakuni o&apos;qilmoqda…
+              </p>
+            </>
+          ) : (
+            <>
+              <div className={LABEL}>xato</div>
+              <p className="mt-4 font-mono text-[13px] leading-relaxed text-[#f2cf8a]">
+                Seans yakunini o&apos;qib bo&apos;lmadi ({loadError}). Sahifani yangilab
+                ko&apos;ring — yozuvning o&apos;zi joyida bo&apos;lishi mumkin.
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  if (session === null) return <NotFound sessionId={sessionId} availability={availability} />
+
+  const { words, lesson, previous, streak } = data
 
   const written = session.sentences.filter((record) => !record.skipped)
   const skippedCount = session.sentences.length - written.length
@@ -302,7 +428,6 @@ export function Results() {
       ? 'Tashlanganlarni yozish'
       : 'Davom ettirish'
   const showPracticeLink = lesson !== null
-  const streak = streakDays()
 
   return (
     // Ildiz ATAYLAB oddiy <div>: <main>, markazlash, kenglik chegarasi va yon
@@ -333,6 +458,14 @@ export function Results() {
           </Link>
         </div>
       </Reveal>
+
+      {/* (§8.4d) Ombor ishlamayotgan bo'lsa buni AYTISH kerak: aks holda
+          foydalanuvchi bu seansning saqlanganiga ishonib qolardi. */}
+      {availability !== 'ready' ? (
+        <div className="mt-4">
+          <StatsBanner availability={availability} />
+        </div>
+      ) : null}
 
       {/* Asosiy ko'rsatkich: butun ekranning yagona urg'usi. */}
       <Reveal delay={70}>

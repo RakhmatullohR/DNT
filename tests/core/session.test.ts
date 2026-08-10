@@ -4,10 +4,14 @@ import {
   clampIndex,
   hasWrittenSentence,
   nextSentenceIndex,
+  planSentenceWrite,
   SESSION_MAX_MS,
   SESSION_MAX_SENTENCES,
   sessionShouldEnd,
+  wordDeltaOf,
 } from '../../src/core/session.ts'
+import type { SentenceWritePlan } from '../../src/core/session.ts'
+import { tokenize } from '../../src/core/tokenize.ts'
 
 describe('seans chegaralari', () => {
   it("PLAN §7 dagi qiymatlarni saqlaydi: 20 gap va 10 daqiqa", () => {
@@ -170,5 +174,173 @@ describe("bo'sh seans darvozasi", () => {
     expect(
       hasWrittenSentence([{ skipped: true }, { skipped: false }, { skipped: true }]),
     ).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Gap darajasidagi yozuv shartnomasi (docs/stats-longterm.md §8.2)
+// ---------------------------------------------------------------------------
+
+/** Test uchun minimal gap yozuvi — `planSentenceWrite` faqat `skipped` ga qaraydi. */
+type Rec = { id: string; skipped: boolean }
+
+function rec(id: string, skipped: boolean): Rec {
+  return { id, skipped }
+}
+
+describe('gap darajasidagi yozuv darvozasi (§8.2.5)', () => {
+  it("birinchi YOZILGAN gap darhol quyiladi", () => {
+    const plan = planSentenceWrite([], false, rec('a', false))
+    expect(plan.write.map((r) => r.id)).toEqual(['a'])
+    expect(plan.pending).toEqual([])
+    expect(plan.hasWritten).toBe(true)
+  })
+
+  it('birinchi TASHLANGAN gap yozilmaydi, buferda ushlanadi', () => {
+    const plan = planSentenceWrite([], false, rec('a', true))
+    expect(plan.write).toEqual([])
+    expect(plan.pending.map((r) => r.id)).toEqual(['a'])
+    expect(plan.hasWritten).toBe(false)
+  })
+
+  it('⭐ ketma-ket kelgan BARCHA tashlangan gaplar birinchi yozilgani bilan BIRGA quyiladi', () => {
+    // "Faqat oxirgisini ushlab turish" varianti aynan shu yerda yiqilardi:
+    // birinchi ikkita tashlangan gap jimgina yo'qolib, seansdagi gaplar soni
+    // yozuv bilan kelishmay qolardi.
+    let pending: readonly Rec[] = []
+    let hasWritten = false
+    const written: string[] = []
+
+    for (const record of [rec('s1', true), rec('s2', true), rec('s3', true), rec('w', false)]) {
+      const plan: SentenceWritePlan<Rec> = planSentenceWrite(pending, hasWritten, record)
+      written.push(...plan.write.map((r) => r.id))
+      pending = plan.pending
+      hasWritten = plan.hasWritten
+    }
+
+    expect(written).toEqual(['s1', 's2', 's3', 'w'])
+    expect(pending).toEqual([])
+    expect(hasWritten).toBe(true)
+  })
+
+  it('darvoza ochilgandan keyin tashlangan gap ham DARHOL yoziladi', () => {
+    const plan = planSentenceWrite([], true, rec('x', true))
+    expect(plan.write.map((r) => r.id)).toEqual(['x'])
+    expect(plan.pending).toEqual([])
+    expect(plan.hasWritten).toBe(true)
+  })
+
+  it('⭐ butunlay tashlangan seans HECH NARSA yozmaydi (PLAN §7 darvozasi saqlanadi)', () => {
+    let pending: readonly Rec[] = []
+    let hasWritten = false
+    const written: string[] = []
+
+    for (const record of [rec('a', true), rec('b', true), rec('c', true)]) {
+      const plan: SentenceWritePlan<Rec> = planSentenceWrite(pending, hasWritten, record)
+      written.push(...plan.write.map((r) => r.id))
+      pending = plan.pending
+      hasWritten = plan.hasWritten
+    }
+
+    expect(written).toEqual([])
+    expect(hasWritten).toBe(false)
+    // Bufer to'lgan, lekin chaqiruvchi uni TASHLAYDI — `hasWritten` false.
+    expect(pending.map((r) => r.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('`hasWritten` `hasWrittenSentence` bilan HAR DOIM kelishadi', () => {
+    const cases: boolean[][] = [
+      [],
+      [true],
+      [true, true, true],
+      [false],
+      [true, false],
+      [true, true, false, true],
+      [false, true, true],
+    ]
+
+    for (const flags of cases) {
+      const records = flags.map((skipped, i) => rec(String(i), skipped))
+      let pending: readonly Rec[] = []
+      let hasWritten = false
+      for (const record of records) {
+        const plan: SentenceWritePlan<Rec> = planSentenceWrite(pending, hasWritten, record)
+        pending = plan.pending
+        hasWritten = plan.hasWritten
+      }
+      expect(hasWritten).toBe(hasWrittenSentence(records))
+    }
+  })
+
+  it('SOF: kiruvchi bufer o\'zgartirilmaydi', () => {
+    const pending = [rec('a', true)]
+    const before = [...pending]
+    planSentenceWrite(pending, false, rec('b', true))
+    expect(pending).toEqual(before)
+  })
+})
+
+describe("bitta gapning so'z hissasi (§8.1)", () => {
+  it("faqat `word` tokenlar sanaladi, kalitlar kichik harfda", () => {
+    const tokens = tokenize('The quick fox.')
+    const delta = wordDeltaOf(tokens, new Map())
+
+    expect([...delta.keys()].sort()).toEqual(['fox', 'quick', 'the'])
+    expect(delta.get('the')).toEqual({ exposures: 1, errors: 0 })
+  })
+
+  it("`The` va `the` BITTA kalitga qo'shiladi", () => {
+    const tokens = tokenize('The cat and the dog.')
+    const delta = wordDeltaOf(tokens, new Map())
+    expect(delta.get('the')).toEqual({ exposures: 2, errors: 0 })
+  })
+
+  it('xatolar TOKEN indeksi bo\'yicha olinadi', () => {
+    const tokens = tokenize('The quick fox.')
+    // `tokenize` gaplarni uzluksiz beradi: 0='The', 1=' ', 2='quick', 3=' ', 4='fox'
+    const errors = new Map([
+      [0, 1],
+      [4, 3],
+    ])
+    const delta = wordDeltaOf(tokens, errors)
+
+    expect(delta.get('the')).toEqual({ exposures: 1, errors: 1 })
+    expect(delta.get('quick')).toEqual({ exposures: 1, errors: 0 })
+    // `fox` da UCHTA klavish xatosi, lekin bitta TA'SIRLANISH -> bitta xato.
+    expect(delta.get('fox')).toEqual({ exposures: 1, errors: 1 })
+  })
+
+  it('⭐ `errors <= exposures` QURILISH bo\'yicha — har ta\'sirlanishga ko\'pi bilan bitta xato', () => {
+    // Ombor darajasidagi qisqich sinovdan o'tmasdi: u TARTIBGA BOG'LIQ bo'lib
+    // qolardi va ayni mashq tarixi seanslar tartibiga qarab 17% yoki 50%
+    // berardi, buzilish esa qaytarib bo'lmaydigan UMRBOD hisoblagichda sodir
+    // bo'lardi (`PLAN.md` §11.3, 9-invariant).
+    const delta = wordDeltaOf(tokenize('rhythm'), new Map([[0, 5]]))
+    expect(delta.get('rhythm')).toEqual({ exposures: 1, errors: 1 })
+  })
+
+  it('qisqich TOKEN bo\'yicha: bitta gapda ikki marta xato qilingan so\'z 2/2 beradi', () => {
+    // Qisqich so'z bo'yicha YIG'INDIGA qo'yilsa bu holat 2/1 bo'lib, ikkinchi
+    // ta'sirlanishning xatosi jimgina yo'qolardi.
+    const tokens = tokenize('the cat and the dog')
+    // 0='the', 6='the' (oradagi toq indekslar — bo'shliqlar).
+    const delta = wordDeltaOf(tokens, new Map([[0, 4], [6, 2]]))
+    expect(delta.get('the')).toEqual({ exposures: 2, errors: 2 })
+  })
+
+  it('⭐ KUMULYATIV EMAS: har chaqiruv faqat O\'Z gapining hissasini beradi', () => {
+    // §8.1 ning butun mag'zi. `wordStatsRef` seans davomida yig'ilib boradi va
+    // uni har gapda quysa, birinchi gapning hissasi ikkinchi marta yozilardi.
+    const first = wordDeltaOf(tokenize('the cat'), new Map())
+    const second = wordDeltaOf(tokenize('the dog'), new Map())
+
+    expect(first.get('the')).toEqual({ exposures: 1, errors: 0 })
+    expect(second.get('the')).toEqual({ exposures: 1, errors: 0 })
+    expect(second.has('cat')).toBe(false)
+  })
+
+  it("so'zsiz gap bo'sh xarita beradi", () => {
+    expect(wordDeltaOf(tokenize('... 42 !'), new Map()).size).toBe(0)
+    expect(wordDeltaOf([], new Map()).size).toBe(0)
   })
 })

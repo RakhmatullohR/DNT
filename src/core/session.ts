@@ -101,3 +101,123 @@ export function nextSentenceIndex(
 export function hasWrittenSentence(records: readonly { skipped: boolean }[]): boolean {
   return records.some((record) => !record.skipped)
 }
+
+// ---------------------------------------------------------------------------
+// Gap darajasidagi yozuv shartnomasi (docs/stats-longterm.md §8.2)
+// ---------------------------------------------------------------------------
+
+/** `planSentenceWrite` qaytaradigan qaror. */
+export type SentenceWritePlan<T> = {
+  /** AYNAN SHU chaqiruvda, BITTA tranzaksiyada yoziladigan gaplar — tartibda. */
+  write: readonly T[]
+  /** Keyingi chaqiruvga o'tadigan bufer. */
+  pending: readonly T[]
+  /** Shu chaqiruvdan keyin seansda rostdan yozilgan gap bormi. */
+  hasWritten: boolean
+}
+
+/**
+ * ⭐ Gap tugaganda NIMA yozilishini hal qiladi (`docs/stats-longterm.md` §8.2.5).
+ *
+ * Muammo: ombor endi seans oxirida emas, HAR GAPDA yoziladi (§8) — shunda
+ * `pagehide` da yo'qotish blast radiusi butun seansdan bitta gapga tushadi.
+ * Lekin bu PLAN §7 dagi bo'sh seans darvozasi bilan to'qnashadi: hammasi
+ * `Escape` bilan tashlangan seans HECH NARSA yozmasligi kerak, va bu qoida
+ * test bilan mixlangan (`hasWrittenSentence`).
+ *
+ * Yechim — buferlash. Birinchi YOZILGAN gap paydo bo'lgunicha tashlangan
+ * gaplar ushlab turiladi va o'sha gap bilan BIRGA quyiladi; seans butunlay
+ * tashlangan holda tugasa bufer shunchaki tashlanadi (chaqiruvchi uni
+ * yozmaydi — bu yerda alohida funksiya kerak emas).
+ *
+ * ⚠️ Bufer BITTA gap emas, KETMA-KET KELGAN BARCHA tashlangan gaplar uchun.
+ * "Faqat oxirgisini ushlab turish" varianti sinovdan o'tmaydi: foydalanuvchi
+ * ketma-ket uchta gapni tashlab, keyin to'rtinchisini yozsa, birinchi ikkitasi
+ * jimgina yo'qolardi va seansdagi gaplar soni yozuv bilan kelishmay qolardi.
+ *
+ * Birinchi yozilgan gapdan KEYIN buferlash to'xtaydi: o'shandan boshlab har
+ * gap (tashlangani ham) darhol yoziladi. Tashlangan gap seans yozuviga kiradi,
+ * lekin kunlik/so'z/umrbod hisoblagichlarga HISSA QO'SHMAYDI — bu qoida yozuv
+ * qatlamida, bu yerda emas.
+ *
+ * SOF: kiruvchi massivlar o'zgartirilmaydi, yangi qaror qaytariladi.
+ */
+export function planSentenceWrite<T extends { skipped: boolean }>(
+  pending: readonly T[],
+  hasWritten: boolean,
+  record: T,
+): SentenceWritePlan<T> {
+  // Darvoza allaqachon ochilgan — buferlashning ma'nosi qolmadi.
+  if (hasWritten) return { write: [record], pending: [], hasWritten: true }
+
+  // Hali bitta ham gap yozilmagan va bu ham tashlangan: ushlab turamiz.
+  if (record.skipped) return { write: [], pending: [...pending, record], hasWritten: false }
+
+  // Birinchi YOZILGAN gap — bufer u bilan birga, BITTA tranzaksiyada quyiladi.
+  return { write: [...pending, record], pending: [], hasWritten: true }
+}
+
+/** `wordDeltaOf` qaytaradigan bitta so'zning hissasi. */
+export type WordDelta = { exposures: number; errors: number }
+
+/** `wordDeltaOf` kutadigan minimal token shakli (`core/types.ts` dagi `Token` mos keladi). */
+type WordToken = { kind: 'word' | 'gap'; text: string }
+
+/**
+ * ⭐ BITTA gapning so'z hissasi (`docs/stats-longterm.md` §8.1).
+ *
+ * ⚠️ Bu funksiya §13 dagi "eng jiddiy amalga oshirish xatari" ga qarshi turadi.
+ * `useTypingSession` dagi `wordStatsRef` seans davomida KUMULYATIV yig'iladi
+ * (`exposures: current.exposures + 1`), ya'ni uni har gapda omborga quysa
+ * sonlar ko'payib ketardi: ikkinchi gapdan keyin birinchi gapning hissasi
+ * IKKINCHI marta yozilardi. Gap darajasidagi yozuv DELTA talab qiladi, va
+ * delta kumulyativ xaritadan ayirish bilan emas, gapning O'ZIDAN olinadi —
+ * ayirish usuli bitta o'tkazib yuborilgan yangilanishda jimgina siljib ketardi.
+ *
+ * Kalitlar KICHIK HARFGA keltiriladi: `The` va `the` bitta yozuvga qo'shiladi,
+ * chunki reyting so'zning o'zi haqida, uning gap boshida turgani haqida emas.
+ *
+ * Bitta gapda ikki marta uchragan so'z IKKI ta'sirlanish beradi — bu ataylab:
+ * u rostdan ikki marta yozilgan.
+ *
+ * Xatolar `errorCounts` dan olinadi (kalit — TOKEN indeksi, so'z indeksi emas).
+ *
+ * ⚠️ **HAR TA'SIRLANISH UCHUN KO'PI BILAN BITTA XATO** (`min(…, 1)`), klavish
+ * darajasidagi yig'indi EMAS. Ya'ni `errors` = "bu so'z necha marta XATO BILAN
+ * yozilgan". Qisqich AYNAN shu yerda, MANBADA turishi shart:
+ *
+ *   - Ombor darajasida qisqartirish (`errors > exposures ? exposures : errors`)
+ *     TARTIBGA BOG'LIQ bo'lib qoladi: ayni mashq tarixi seanslar tartibiga
+ *     qarab 17% yoki 50% beradi, va buzilish qaytarib bo'lmaydigan UMRBOD
+ *     hisoblagichda sodir bo'ladi (`PLAN.md` §11.3, 9-invariant).
+ *   - Xato OG'IRLIGI (nechta harf) baribir saqlanmasdi — ombor qisqichi uni
+ *     allaqachon yo'q qilardi: `{e:1,x:1}×10` va `{e:1,x:5}×10` bir xil qatorga
+ *     tushardi.
+ *   - `docs/stats-longterm.md` §6.3 dagi `estimateBeta` `p_i` ni BINOMIAL ULUSH
+ *     deb modellaydi — bu faqat shu birlikda ma'noga ega.
+ *
+ * Qisqich TOKEN bo'yicha qo'llanadi, so'z bo'yicha yig'indiga emas: bitta gapda
+ * ikki marta uchragan va ikkalasida ham xato qilingan so'z `{exposures:2,
+ * errors:2}` beradi — `errors <= exposures` shundagina QURILISH bo'yicha
+ * o'rinli bo'ladi.
+ */
+export function wordDeltaOf(
+  tokens: readonly WordToken[],
+  errorCounts: ReadonlyMap<number, number>,
+): Map<string, WordDelta> {
+  const delta = new Map<string, WordDelta>()
+
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]
+    if (token === undefined || token.kind !== 'word') continue
+
+    const key = token.text.toLowerCase()
+    const current = delta.get(key)
+    // `min(…, 1)` — bitta ta'sirlanish ko'pi bilan bitta xato beradi (yuqoridagi izoh).
+    const errors = (errorCounts.get(i) ?? 0) > 0 ? 1 : 0
+    if (current === undefined) delta.set(key, { exposures: 1, errors })
+    else delta.set(key, { exposures: current.exposures + 1, errors: current.errors + errors })
+  }
+
+  return delta
+}

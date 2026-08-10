@@ -29,6 +29,22 @@ export default defineConfig({
           include: ['tests/client/**/*.test.ts'],
         },
       },
+      {
+        // IndexedDB qatlami (`src/store/statsDb.ts`). ALOHIDA proyekt, chunki
+        // bu yerda global `indexedDB` KERAK, boshqa hech qayerda esa KERAK EMAS:
+        // `fake-indexeddb/auto` global'ni o'rnatadi, va uni umumiy setup'ga
+        // qo'yish sof `core` testlarini ham brauzer API'si bor muhitga
+        // ko'chirardi — repo'ning "core = sof mantiq, DOM yo'q" bo'linishiga zid.
+        //
+        // ⚠️ `fake-indexeddb` FAQAT devDependency: ishlab chiqarish kodi uni
+        // hech qachon import qilmaydi, u shu yerda — testda — ulanadi.
+        test: {
+          name: 'store',
+          environment: 'node',
+          include: ['tests/store/**/*.test.ts'],
+          setupFiles: ['fake-indexeddb/auto'],
+        },
+      },
     ],
   },
 })
