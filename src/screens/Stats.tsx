@@ -34,7 +34,7 @@ import {
 // bu ekranda faqat foydalanuvchi "so'rash" tugmasini bosganda chaqiriladi, boot
 // paytida EMAS (bu allaqachon `main.tsx` da bir marta bajarilgan; §3.1, §3.3).
 import { persistenceState, requestPersistence, storageEstimate } from '../store/persist.ts'
-import type { PersistState, StorageEstimate } from '../store/persist.ts'
+import type { PersistEstimate, PersistState } from '../store/persist.ts'
 import {
   audioComparison,
   clearStats,
@@ -459,7 +459,7 @@ function StorageStatus({
 }: {
   persistState: PersistState | null
   /** `undefined` — hali yuklanmagan; ichki `null` — `storageEstimate()` ning o'zi qaytaradigan "ma'lumot yo'q" holati. */
-  estimate: StorageEstimate | undefined
+  estimate: PersistEstimate | undefined
   requesting: boolean
   onRequest: () => void
 }) {
@@ -557,7 +557,7 @@ export function Stats() {
   const [persistState, setPersistState] = useState<PersistState | null>(null)
   // `undefined` — hali yuklanmagan; ichki `null` — `storageEstimate()` ning
   // o'zi qaytaradigan "brauzer ma'lumot bermaydi" holati.
-  const [estimate, setEstimate] = useState<StorageEstimate | undefined>(undefined)
+  const [estimate, setEstimate] = useState<PersistEstimate | undefined>(undefined)
   const [requestingPersistence, setRequestingPersistence] = useState(false)
 
   // Komponent umrini kuzatish: ekrandagi HAMMA asinxron joy natijani FAQAT

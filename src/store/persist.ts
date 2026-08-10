@@ -28,12 +28,6 @@ export type PersistState = 'granted' | 'denied' | 'unsupported'
 export type PersistEstimate = { usage: number; quota: number; ratio: number } | null
 
 /**
- * Eski nom — `src/screens/Stats.tsx` shu nom bilan import qiladi.
- * @deprecated `PersistEstimate` ishlating.
- */
-export type StorageEstimate = PersistEstimate
-
-/**
  * `navigator.storage` va kerakli metodlar MAVJUDLIGINI tekshiradi.
  *
  * Tekshiruvning O'ZI ham `SecurityError` tashlashi mumkin (masalan cookie'lari

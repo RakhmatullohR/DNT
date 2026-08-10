@@ -58,6 +58,29 @@ export const META_KEY_LIFETIME = 'lifetime'
 export const META_KEY_DECAY_ANCHOR_DAY = 'decayAnchorDay'
 
 /**
+ * ⭐ ARALASH DAVR CHEGARASI — shu KUN RAQAMIGACHA (o'zi ham kiradi) kun
+ * qatorlari ikkita HAR XIL o'lchov davridan yig'ilgan bo'lishi mumkin
+ * (`PLAN.md` §11.3, 10-invariant: "nisbatlar IZCHIL oynadan").
+ *
+ * NEGA KERAK. Migratsiya kun qatorining baza uchtasini (`correctKeystrokes`,
+ * `activeMs`, `sentences`) v1 `days` dan TO'LIQ oladi, `k`/`nc` ni esa faqat
+ * OMON QOLGAN seanslardan tiklaydi — v1 esa 500 seansdan eskisini tashlab
+ * yuborgan. Ya'ni bunday kunda surat va maxraj boshqa-boshqa gaplar to'plamini
+ * qamraydi va nisbat JIMGINA noto'g'ri chiqadi (o'lchangan: `netWpm` 40 -> 9.13,
+ * `accuracy` 96% -> "100.0%").
+ *
+ * ⚠️ BU MAYDON `v1MigratedAt` MARKERIDAN ALOHIDA va ajratish MUHIM. Marker
+ * "migratsiya TEKSHIRILDI" degani va u BO'SH v1 ombori uchun ham yoziladi
+ * (aks holda har boot'da 2 MB hujjat bekorga qayta parse qilinardi). Uni
+ * chegara sifatida ishlatish v1 tarixi BO'LMAGAN — ya'ni HAR BIR YANGI —
+ * foydalanuvchida o'rnatilgan kunning nisbatlarini butunlay o'chirib qo'yardi
+ * va ustiga "ertadan beri o'lchanadi" degan YOLG'ON belgini chizardi.
+ *
+ * Yo'q bo'lsa aralashish manbai ham yo'q: oyna BUTUN tarixni qamraydi.
+ */
+export const META_KEY_MIXED_ERA_DAY = 'mixedEraDay'
+
+/**
  * `words` do'koni qatori (§4.1), BIRLAMCHI KALIT — `w`.
  *
  * `keyPath: 'w'` ATAYIN tanlangan (avtoinkrement `id` emas): so'zning kichik
@@ -513,7 +536,7 @@ export function toOptionalDay(value: unknown): number | undefined {
   return day === undefined ? undefined : Math.floor(day)
 }
 
-export function toSentenceRecord(raw: unknown): SentenceRecord | null {
+function toSentenceRecord(raw: unknown): SentenceRecord | null {
   if (!isRecord(raw)) return null
   return {
     // `lessonId` ATAYIN o'qilmaydi: eski yozuvlarda u bor, lekin `SentenceRecord`

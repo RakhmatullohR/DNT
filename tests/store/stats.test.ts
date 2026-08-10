@@ -59,6 +59,7 @@ import { closeDb, deleteDb, openDb, runTx } from '../../src/store/statsDb.ts'
 import {
   META_KEY_DECAY_ANCHOR_DAY,
   META_KEY_LIFETIME,
+  META_KEY_MIXED_ERA_DAY,
   STORE_DAYS,
   STORE_META,
   STORE_SESSIONS,
@@ -214,8 +215,16 @@ async function seed(data: {
   sessions?: readonly SessionRecord[]
   lifetime?: LifetimeMeta
   anchor?: number
-  /** `meta[v1MigratedAt]` — MS TAMG'ASI. `totals()` izchil oynasining chegarasi. */
+  /** `meta[v1MigratedAt]` — MS TAMG'ASI, migratsiya IDEMPOTENTLIK markeri. */
   migratedAt?: number
+  /**
+   * `meta[mixedEraDay]` — KUN RAQAMI, `totals()` izchil oynasining chegarasi.
+   *
+   * ⚠️ Markerdan ATAYIN ALOHIDA: marker bo'sh v1 ombori uchun ham yoziladi,
+   * ya'ni har bir YANGI foydalanuvchida ham bor. Faqat shu maydon "v1 kun
+   * qatorlari HAQIQATAN ko'chirildi" deganini bildiradi.
+   */
+  mixedEraDay?: number
 }): Promise<void> {
   const db = await open()
   await runTx(db, [STORE_WORDS, STORE_DAYS, STORE_SESSIONS, STORE_META], 'readwrite', (tx) => {
@@ -226,6 +235,7 @@ async function seed(data: {
     if (data.lifetime !== undefined) meta.put(data.lifetime, META_KEY_LIFETIME)
     if (data.anchor !== undefined) meta.put(data.anchor, META_KEY_DECAY_ANCHOR_DAY)
     if (data.migratedAt !== undefined) meta.put(data.migratedAt, META_KEY_V1_MIGRATED_AT)
+    if (data.mixedEraDay !== undefined) meta.put(data.mixedEraDay, META_KEY_MIXED_ERA_DAY)
   })
 }
 
@@ -534,15 +544,33 @@ describe('exportJson va importJson', () => {
     // `*Since` — "bu son FAQAT shu kundan beri aniq bilinadi" degan belgi, ya'ni
     // KICHIKROQ sana ko'proq bilimni bildiradi va maydonning umuman yo'qligi
     // "to'liq bilinadi" degani. Shuning uchun uni `max()` qilish XATO bo'lardi.
-    await writeAll('s-1', [withWords(makeSentence())])
-    // Yozuv yo'li konvertsiz omborda uchala `*Since` ni BUGUNGA qo'yadi
-    // (`lifetimeForWrite` ta'mirlash shoxi) — ya'ni sonlar "shu kundan beri".
-    expect(JSON.parse(await exportJson()).lifetime).toMatchObject({
+    //
+    // ⚠️ Konvert QO'LDA urug'lantiriladi, `writeSentences` orqali EMAS. Sabab
+    // shartnoma o'zgarishi: yozuv yo'li endi migratsiyani KUTADI (§9 qorovuli),
+    // migratsiya esa konvertni HAR DOIM yozadi — ya'ni `lifetimeForWrite` ning
+    // "belgisiz konvertni bugungi sana bilan ta'mirlash" shoxiga bu yo'ldan
+    // umuman yetib borilmaydi. O'sha shox endi `statsWriteGuard.test.ts` da,
+    // migratsiya YIQILGAN holatda sinaladi — ya'ni haqiqatan yetib boriladigan
+    // yagona joyda.
+    await seed({
+      lifetime: {
+        activeMs: 60_000,
+        correctKeystrokes: 120,
+        netChars: 120,
+        keystrokes: 120,
+        sessions: 1,
+        netCharsSince: dayNo(),
+        sessionsSince: dayNo(),
+        keystrokesSince: dayNo(),
+      },
+    })
+    const partial = await exportJson()
+    // Sonlar "shu kundan beri" — uchala belgi ham konvertda.
+    expect(JSON.parse(partial).lifetime).toMatchObject({
       netCharsSince: dayNo(),
       sessionsSince: dayNo(),
       keystrokesSince: dayNo(),
     })
-    const partial = await exportJson()
 
     // `clearStats()` esa BELGISIZ (to'liq bilinadigan) bo'sh konvert yozadi.
     await clearStats(NOW)
@@ -555,6 +583,63 @@ describe('exportJson va importJson', () => {
     expect(lifetime).not.toHaveProperty('netCharsSince')
     expect(lifetime).not.toHaveProperty('sessionsSince')
     expect(lifetime).not.toHaveProperty('keystrokesSince')
+  })
+
+  it("⭐ import: `k`/`nc` si YO'Q kun kelsa ARALASH DAVR chegarasi QAYTA qo'yiladi", async () => {
+    // `meta.clear()` importda chegarani ham o'chiradi. Uni tiklamaslik fayldagi
+    // eski, seansi qisqartirilgan kunlarni izchil oynaga qo'shib yuborardi —
+    // ya'ni BLOKER 1 (`netWpm` past, `accuracy` doim "100.0%") aynan zaxirani
+    // tiklash orqali qaytardi.
+    const backup = v2File({
+      days: [
+        // FINGERPRINT: v2 yozuv yo'li `k`/`nc` ni HAR DOIM yozadi, ya'ni
+        // ularsiz qator faqat v1 dan kelib chiqadi.
+        { d: dayKey(30), correctKeystrokes: 900, activeMs: 600_000, sentences: 10 },
+        { d: dayKey(2), correctKeystrokes: 96, activeMs: 60_000, sentences: 1, k: 100, nc: 200 },
+      ],
+      lifetime: {
+        activeMs: 660_000,
+        correctKeystrokes: 996,
+        netChars: 200,
+        sessions: 1,
+        keystrokes: 100,
+      },
+    })
+
+    expect(await importJson(backup)).toEqual({ ok: true })
+
+    expect(await readMeta<number>(META_KEY_MIXED_ERA_DAY)).toBe(dayNo())
+    // Oyna BUGUNDAN KEYIN boshlanadi -> hozircha o'lchov yo'q, lekin xom
+    // sonlar joyida va belgi buni ochiq aytadi.
+    const t = await totals()
+    expect(t?.netWpm).toBeNull()
+    expect(t?.correctKeystrokes).toBe(996)
+    expect(t?.ratiosSince).toBe(dayNo() + 1)
+  })
+
+  it("import: hamma kunda `k`/`nc` bor bo'lsa chegara QO'YILMAYDI", async () => {
+    // To'liq v2 zaxirasi — aralashadigan davr yo'q, ya'ni nisbatni cheklash
+    // uchun ham sabab yo'q.
+    const backup = v2File({
+      days: [
+        { d: dayKey(2), correctKeystrokes: 96, activeMs: 60_000, sentences: 1, k: 100, nc: 200 },
+      ],
+      lifetime: {
+        activeMs: 60_000,
+        correctKeystrokes: 96,
+        netChars: 200,
+        sessions: 1,
+        keystrokes: 100,
+      },
+    })
+
+    expect(await importJson(backup)).toEqual({ ok: true })
+
+    expect(await readMeta<number>(META_KEY_MIXED_ERA_DAY)).toBeUndefined()
+    const t = await totals()
+    expect(t?.netWpm).toBe(40)
+    expect(t?.accuracy).toBe(0.96)
+    expect(t?.ratiosSince).toBeUndefined()
   })
 
   it("eksport — o'qish mumkin bo'lgan, o'zini ATAYDIGAN va o'zi import qilinadigan JSON", async () => {
@@ -1820,6 +1905,7 @@ describe('totals', () => {
   async function seedMismatchedLifetime(): Promise<void> {
     await seed({
       migratedAt: timeAt(10),
+      mixedEraDay: dayNo(10),
       days: [
         { d: dayKey(20), correctKeystrokes: 900, activeMs: 600_000, sentences: 10 },
         { d: dayKey(5), correctKeystrokes: 96, activeMs: 60_000, sentences: 1, k: 100, nc: 200 },
@@ -1882,12 +1968,32 @@ describe('totals', () => {
     })
   })
 
+  it("⭐ YANGI foydalanuvchi: O'RNATILGAN KUNNING O'ZI nisbatlarga KIRADI", async () => {
+    // Haqiqiy ilova tartibi: `main.tsx` boot -> o'sha kuni mashq -> bosh ekran.
+    // v1 tarixi YO'Q, ya'ni aralashadigan davrning O'ZI yo'q.
+    //
+    // ⚠️ REGRESSIYA QOROVULI. `totals()` chegarani `v1MigratedAt` markeridan
+    // olganida bu yerdagi hamma narsa oynadan chiqib ketardi: marker BUGUN
+    // qo'yiladi (migratsiya bo'sh ombor uchun ham yoziladi), oyna esa undan
+    // KEYINGI kunlardan boshlanardi. O'lchangan natija: `netWpm` va `accuracy`
+    // `null`, ustiga `ratiosSince` "ertadan beri" degan YOLG'ON belgi.
+    expect(await initStats(NOW)).toBe('ready')
+    await writeTwoSentenceSession()
+
+    const t = await totals()
+    // netChars = 120 + 45 = 165; 165 / 5 / 1.5 daqiqa = 22.
+    expect(t?.netWpm).toBe(22)
+    expect(t?.accuracy).toBe(165 / 180)
+    expect(t?.ratiosSince).toBeUndefined()
+  })
+
   it("⭐ migratsiya KUNINING O'ZI oynadan chiqariladi — u ARALASH bo'lishi mumkin", async () => {
     // Migratsiya kunida yozilgan kun qatorida v1 dan kelgan baza uchtasi ham,
     // o'sha kuni v2 yo'li bilan yozilgan `k`/`nc` ham bo'lishi mumkin — ya'ni
     // to'rtala maydon AYNI gaplardan degan kafolat AYNAN shu kunda buziladi.
     await seed({
       migratedAt: timeAt(3),
+      mixedEraDay: dayNo(3),
       days: [{ d: dayKey(3), correctKeystrokes: 96, activeMs: 60_000, sentences: 1, k: 100, nc: 200 }],
       lifetime: {
         activeMs: 60_000,
@@ -1905,7 +2011,14 @@ describe('totals', () => {
     expect(t?.ratiosSince).toBe(dayNo(3) + 1)
   })
 
-  it("migratsiyadan OLDIN kun BO'LMASA oyna butun tarix — `ratiosSince` YO'Q", async () => {
+  it("⭐ v1 kun qatorlari KO'CHIRILMAGAN bo'lsa oyna BUTUN tarix — `ratiosSince` YO'Q", async () => {
+    // ⚠️ MARKER BOR, CHEGARA YO'Q — bu HAR BIR YANGI foydalanuvchining holati:
+    // `migrateV1ToV2()` markerni bo'sh v1 ombori uchun ham yozadi, lekin
+    // ko'chiradigan kun qatori bo'lmagani uchun aralash davr YARALMAYDI.
+    //
+    // Markerning O'ZI chegara sifatida ishlatilganida bu yerdagi yagona kun
+    // oynadan chiqib ketardi va foydalanuvchi `netWpm`/`accuracy` o'rniga
+    // chiziqcha ko'rardi — ustiga "ertadan beri o'lchanadi" degan yolg'on belgi.
     await seed({
       migratedAt: timeAt(10),
       days: [{ d: dayKey(5), correctKeystrokes: 96, activeMs: 60_000, sentences: 1, k: 100, nc: 200 }],
@@ -1930,6 +2043,7 @@ describe('totals', () => {
     // `nc` surati esa tushmasdi.
     await seed({
       migratedAt: timeAt(10),
+      mixedEraDay: dayNo(10),
       days: [
         { d: dayKey(5), correctKeystrokes: 96, activeMs: 60_000, sentences: 1, k: 100, nc: 200 },
         // `k`/`nc` YO'Q: qo'shilsa netWpm 40 -> 20 ga tushardi.

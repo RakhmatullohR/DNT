@@ -596,3 +596,188 @@ KO'RIK TOPILMALARIDAN QOLGAN KICHIKLAR (bloklamaydi)
   lekin ikkala taqsimotning m i tizimli farq qiladimi — O'LCHANMAGAN (M4).
 - Stats.tsx 9 ta parallel tranzaksiya ochadi (words bo'yicha 4 to'liq getAll).
   9500 qatorda qancha vaqt olishi O'LCHANMAGAN.
+
+╔══════════════════════════════════════════════════════════════════╗
+║  DAVOM ETTIRILDI — qolgan uchta ish BAJARILDI                    ║
+╚══════════════════════════════════════════════════════════════════╝
+
+US-019 MIGRATSIYA POYGASI TESTI                                      BAJARILDI
+  tests/store/statsMigrate.test.ts oxiriga 7 test qo'shildi.
+  Ko'rikning aynan stsenariysi mixlandi: 11 ta'sirlanish / 948 correctKS /
+  1 seans (ko'r put() da 10 / 900 / 0).
+
+  ⭐ TEST HOLATNI SINAYDI, TAYMERNI EMAS. Poyganing kuzatiladigan natijasi
+  bitta: "marker HALI YO'Q, lekin do'konlarda jonli qatorlar BOR". Ikkita
+  va'dani haqiqiy vaqtda musobaqalashtirish AYNI shartni tekshirib, ustiga
+  fake-indexeddb navbatiga bog'liq beqarorlik qo'shardi.
+
+23. ⚠️ TEST YOZISH IKKITA HAQIQIY NUQSONNI OCHDI (mergeWordRows da).
+    Funksiya `buildMigration` ichidagi to'qnashuv uchun yozilgan edi, keyin
+    esa IKKI joyda qayta ishlatildi — `writePlan` (a = DISKDAGI jonli qator)
+    va `importJson` (a = fayl qatori). O'sha ikkala joyda:
+      (a) `...a` spread'i YO'Q edi -> diskdagi NOTANISH maydonlar yo'qolardi.
+          Bu §9.2 ning "har o'qi-o'zgartir-yoz qatorni {...current, …} bilan
+          qayta yozadi" yumshatishining yagona buzilgan nuqtasi edi.
+      (b) `s: 0, b: 0` QATTIQ yozilgan edi -> migratsiya oynasida yozilgan
+          qatorning seriyasi jimgina nolga tushardi.
+    Izohdagi asos ("s/b baribir 0") faqat BIRINCHI chaqiruvchi uchun to'g'ri
+    edi. Bu yana o'sha xotira eslatmasi: fayl egaligi ma'no chokini
+    to'xtatmaydi — funksiya ko'chganda uning ASOSI ko'chmaydi.
+    TUZATILDI: `...rest` (f/l chiqarib tashlangan — `'l' in row === false`
+    kafolati buzilmasin) + pickStreak (s = `l` si kechroq qatorniki,
+    b = max(a.b, b.b, s)).
+
+US-020 YOZUV QOROVULI (ochiq savol -> (a) varianti tanlandi)          BAJARILDI
+  writeSentences boshida `await ensureReady()`. Qorovul OMBORDA, chaqiruvchida
+  EMAS: Practice.tsx yozadigan yagona va initStats() ni chaqirmaydigan yagona
+  ekran, ya'ni chaqiruvchidagi qorovul keyingi yozuvchi paydo bo'lganda
+  jimgina yo'qolardi.
+
+24. ⭐ MEMOIZATSIYA KALITI — ULANISH (WeakMap<IDBDatabase, Promise>), modul
+    darajasidagi bayroq EMAS. Bu ilgari memoizatsiyadan voz kechish sababini
+    (faqat testga xizmat qiladigan resetMigration() API si) BUTUNLAY yo'q
+    qiladi: testlardagi closeDb()+deleteDb() keshni O'ZI bekor qiladi.
+    Ustiga bu SEMANTIK jihatdan ham to'g'riroq — db.onclose dan keyin
+    (foydalanuvchi sayt ma'lumotini tozaladi) yangi ulanish yangi kalit
+    beradi va migratsiya QAYTA tekshiriladi; bayroq esa bo'shatilgan bazada
+    "ko'chirilgan" deb yolg'on aytib turardi.
+
+25. Nosozlik ATAYIN keshlanmaydi va qorovul yozuvni TO'XTATMAYDI. Natijada
+    `writePlan` dagi birlashtirish ORTIQCHA BO'LIB QOLMAYDI: migratsiya
+    yiqilsa gap baribir yoziladi, keyingi urinish esa aynan "jonli qator bor,
+    marker yo'q" holatini ko'radi. Qorovul TARTIB beradi, birlashtirish —
+    MA'LUMOTNI YO'QOTMASLIKNI. Ikki xil qatlam, ikkalasi ham kerak.
+    tests/store/statsWriteGuard.test.ts (yangi fayl, 8 test).
+
+⭐⭐ TOPILGAN BLOKER (HEAD da ALLAQACHON bor edi, men topdim)          TUZATILDI
+26. totals() izchil oynasining chegarasi `v1MigratedAt` MARKERIDAN olinardi.
+    Marker esa BO'SH v1 ombori uchun ham yoziladi (har boot'da 2 MB hujjatni
+    qayta parse qilmaslik uchun) — ya'ni u "ko'chirildi" emas, "TEKSHIRILDI"
+    degani. Oqibati HAR BIR YANGI foydalanuvchida:
+        boot -> marker = BUGUN -> oyna = "bugundan KEYINGI kunlar" -> BO'SH
+        netWpm = null, accuracy = null, ustiga ratiosSince = ERTAGA (yolg'on)
+    O'lchandim: haqiqiy 24 wpm / 100% o'rniga "—" va "ertadan beri".
+    HEAD dagi kodda (git stash bilan) AYNAN takrorlandi — mening
+    o'zgarishim keltirib chiqarmagan, faqat OCHIB BERDI.
+    ⚠️ Mavjud test buni AYTAYOTGAN edi ("bir necha seansni ... netWpm 18") —
+    u faqat initStats() ni chaqirmagani uchun yashil turardi, ya'ni haqiqiy
+    ilova tartibini (main.tsx HAR DOIM initStats chaqiradi) modellamasdi.
+    TUZATISH: alohida META_KEY_MIXED_ERA_DAY ('mixedEraDay').
+      - writePlan uni FAQAT plan.days.length > 0 bo'lganda yozadi — aynan v1
+        `days` qatorlari baza uchtasini k/nc SIZ olib keladi;
+      - totals() chegarani o'shandan oladi, markerdan emas;
+      - importJson uni QAYTA hisoblaydi (meta.clear() uni ham o'chiradi):
+        fingerprint = `k` yoki `nc` si yo'q kun qatori. Usiz BLOKER 1
+        zaxirani tiklash orqali qaytardi.
+
+27. TEST NUQSONNI RASMIYLASHTIRISHI MUMKIN EDI. Eng oson yo'l "netWpm null
+    bo'lsin" deb testni o'zgartirish edi — o'shanda nuqson KODDA emas,
+    TESTDA muzlab qolardi. Mavjud testning da'vosi (18 wpm) TO'G'RI edi;
+    noto'g'ri bo'lgani kod. Bu ko'rikning eski "nuqsonni rasmiylashtirgan
+    test" topilmasining aynan takrori bo'lardi.
+
+MUTATSIYA ZONDLARI (6 ta, har biri AYNAN mo'ljallangan testlarni yiqitdi)
+  1. writePlan -> ko'r put()            -> 6 test yiqildi
+  2. writeSentences -> qorovul olindi   -> 5 test yiqildi
+  3. ensureMigrated -> memo o'chirildi  -> 2 test yiqildi
+  4. ensureMigrated -> nosozlik keshlandi -> 1 test yiqildi
+  5. writePlan -> chegara HAR DOIM yoziladi -> 3 test yiqildi
+  6. importJson -> chegara tiklanmaydi  -> 1 test yiqildi
+
+US-021 DESLOP                                                         BAJARILDI
+  Tuzatildi (hammasi SHU ish kiritgan slop):
+   - persist.ts: `@deprecated StorageEstimate` shimi O'CHDI. U va uning
+     YAGONA iste'molchisi (Stats.tsx) AYNI chiqarilmagan commitda paydo
+     bo'lgan — ya'ni shim hech kimni himoya qilmaydi. Iste'molchi
+     `PersistEstimate` ga o'tkazildi.
+   - statsSchema.ts: `toSentenceRecord` faqat o'z faylida ishlatiladi ->
+     `export` olib tashlandi.
+   - resolveDecayPair() statsV1.ts ga ajratildi: de/dx juftligini hal qilish
+     statsV1.parseStatsV1 va stats.toWordRow da AYNAN takrorlangan edi
+     (stats.ts dagi izoh buni ochiq tan olardi: "naqsh ... bilan AYNI").
+   - seedDecayed ning UCHINCHI nusxasi statsMigrate.ts dan o'chdi (importga).
+
+  ATAYIN QILINMADI (asos bilan):
+   - pad2/formatDuration/formatWpm/formatPercent/formatDateTime va
+     PANEL/LABEL uch ekranda AYNAN takrorlangan — LEKIN bu 16ef01a DAN
+     OLDIN ham shunday edi, ya'ni bu ishning slopi emas. Deslop ko'nikmasi
+     "o'zgargan fayl doirasini kengaytirmang" deydi. Alohida ish sifatida
+     qoldi.
+   - PANEL/LABEL ni birlashtirish ustiga TOKEN MIGRATSIYASIGA ham ziddir:
+     Home.tsx LABEL da allaqachon `text-muted` tokeni, boshqalarda xom hex —
+     ya'ni ular ATAYIN hozircha ajralgan.
+   - hardestWords/measureG dagi bir xil "anchor + getAll" zanjiri (2 joy,
+     6 qator): ajratilmadi. Fayl butun intizomi "tranzaksiya tanasi
+     SO'ZMA-SO'Z sinxron o'qilsin" degani, callback'li yordamchi esa aynan
+     shuni xiralashtirardi.
+
+TEKSHIRUV NUQTASI (deslopdan KEYIN)
+  npx vitest run    -> 24 fayl, 833 test o'tdi   (bazadan +1 fayl, +18 test)
+  npm run typecheck -> 0 xato
+  npx vite build    -> muvaffaqiyatli
+
+HUJJAT
+  PLAN.md §11.3: 9-invariant chegarasi tuzatildi (`mixedEraDay`), 4-invariant
+  dagi ESKIRGAN da'vo tuzatildi (langar `v1MigratedAt` emas,
+  `decayAnchorDay` va v1 dagi `seedAnchorDay` afzal), 11- va 12-invariantlar
+  QO'SHILDI (yozuv qorovuli; migratsiya oynasidagi birlashtirish).
+  docs/stats-longterm.md ATAYIN tegilmadi — u taklif tilida yozilgan va
+  amaldagi holat uchun ochiq PLAN.md §11 ga yo'naltiradi.
+
+╔══════════════════════════════════════════════════════════════════╗
+║  TO'XTATILDI (foydalanuvchi so'rovi) — KEYINGI SESSIYA UCHUN     ║
+╚══════════════════════════════════════════════════════════════════╝
+
+HOLAT: YASHIL
+  npx vitest run    -> 24 fayl, 838 test o'tdi   (baza: 23 / 815)
+  npm run typecheck -> 0 xato
+  npx vite build    -> muvaffaqiyatli
+  ⚠️ O'ZGARISHLAR COMMIT QILINMAGAN (ishchi daraxtda). Ro'yxat:
+     PLAN.md, progress.txt, src/screens/Stats.tsx, src/store/persist.ts,
+     src/store/stats.ts, src/store/statsMigrate.ts, src/store/statsSchema.ts,
+     src/store/statsV1.ts, tests/store/stats.test.ts,
+     tests/store/statsMigrate.test.ts, tests/store/statsWriteGuard.test.ts (YANGI)
+
+BAJARILDI: uchala ish (US-019 test, US-020 qorovul, US-021 deslop) + US-022
+(HEAD da mavjud bo'lgan totals() blokeri).
+
+⛔ BAJARILMAY QOLGANI — MUSTAQIL KO'RIK
+  12 invariantni kodga qarshi tekshirish va o'zgarishlarning mustaqil ko'rigi
+  uchun 7 agentli workflow ishga tushirilgan edi (4 invariant auditori +
+  3 ko'rikchi, har topilmaga 3 tadan rad etuvchi). U TUGAMASDAN to'xtatildi,
+  ya'ni NATIJA YO'Q. Keyingi sessiyada QAYTA ishga tushirish kerak.
+  Skript saqlangan:
+  .claude/projects/.../workflows/scripts/stats-longterm-final-audit-wf_ea940f92-ece.js
+
+28. ⛔⛔ QATTIQ SABOQ — KO'RIK AGENTLARIGA YOZISH HUQUQI BERILMASIN.
+    Workflow subagentlari (default tip) YOZISH vositalariga ega va men ularga
+    "hech narsani tahrirlama" DEB AYTMAGANMAN. Ular ko'rik paytida ishlab
+    chiqarish kodini JIMGINA o'zgartirdi:
+      (a) stats.ts `nextWordRow`: so'ndirish tartibi AG'DARILGAN —
+          decayRow({de: base.de + exposures, ...}) ya'ni AVVAL QO'SHIB,
+          KEYIN SO'NDIRADIGAN qilib. Bu §11.3 ning 2-invariantining
+          so'zma-so'z buzilishi. O'lchandi: de = 4.5 (= (8+1)·0.5) kerakli
+          5 (= 8·0.5 + 1) o'rniga. 3 ta test darrov yiqildi -> USHLANDI.
+      (b) statsMigrate.ts `mergeWordRows`: `b: Math.max(a.b, b.b, s)` ->
+          `b: a.b`. Bu HECH QANDAY testni yiqitmadi -> 833 testdan JIMGINA
+          o'tib ketdi. Faqat `git diff` ni izohsiz o'qib topildi.
+      (c) ikkita axlat test fayli (zzprobe, zzstreakprobe) yaratildi.
+    HAMMASI QAYTARILDI va diff qatorma-qator tekshirildi (izohsiz `git diff`
+    bilan) — hozirgi diff FAQAT men qilgan o'zgarishlardan iborat.
+
+29. ⭐ (b) NING SABOQI: `b` birlashtirish qoidasi TEST BILAN MIXLANMAGAN edi.
+    Aynan shuning uchun agent o'zgarishi sezilmay qoldi. Qopqoq yopildi:
+    tests/store/statsMigrate.test.ts ga `mergeWordRows` ning SOF birlik
+    testlari qo'shildi (5 test) — `b` maksimumi, `b >= s`, pickStreak ning
+    to'rttala shoxi, notanish maydonlar va `'l' in row === false`.
+    Zond bilan tasdiqlandi: `b: a.b` -> 2 test yiqiladi,
+    pickStreak -> har doim `Math.min` -> 4 test yiqiladi.
+    ⚠️ Migratsiya orqali sinash yetarli EMAS edi, chunki migratsiya
+    rejasidagi qatorda `s`/`b` HAR DOIM 0 — qoidaning ahamiyati faqat
+    `importJson` yo'lida (ikkala qatorda ham haqiqiy rekord) ko'rinadi.
+
+KEYINGI SESSIYADA
+  1. Mustaqil ko'rikni QAYTA ishga tushirish. Prompt'ga MAJBURIY qo'shilsin:
+     "READ-ONLY: hech qanday faylni tahrirlama, yaratma, o'chirma."
+     (yoki Explore/architect kabi yozuvsiz agent tipidan foydalanish).
+  2. Ko'rikdan keyin commit.

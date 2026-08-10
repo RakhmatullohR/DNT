@@ -130,6 +130,37 @@ export function seedDecayed(exposures: number, errors: number): { de: number; dx
   return { de, dx: (errors * de) / exposures }
 }
 
+/**
+ * Saqlangan `de`/`dx` juftligini hal qiladi: bittasi ham yo'q bo'lsa §6.5
+ * bo'yicha URUG'LANTIRADI, ikkalasi ham bo'lsa `dx <= de` ga qisadi.
+ *
+ * ⚠️ YARMI yo'q qator ISHONCHSIZ deb qaraladi: `dx` `de` siz hech qanday ma'no
+ * tashimaydi, ya'ni "bittasini olib, ikkinchisini urug'lantirish" ikki xil
+ * davrdan kelgan sonlarni bitta juftlikka qo'shardi.
+ *
+ * ⭐ IKKI CHAQIRUVCHI: `parseStatsV1` (v1 hujjati) va `stats.ts` dagi
+ * `toWordRow` (v2 zaxira fayli). Ilgari ayni mantiq ikkala joyda QO'LDA
+ * takrorlangan edi va `toWordRow` dagi izoh buni ochiq tan olardi ("naqsh
+ * `parseStatsV1` bilan AYNI"). Ikkita nusxa ikkita HAR XIL "ishonchli juftlik"
+ * tushunchasi bo'lib ajralib ketishi mumkin edi, farqi esa faqat begona fayl
+ * import qilinganda, bir marta, jimgina chiqardi.
+ *
+ * `seeded` — HUJJAT darajasidagi bayroq uchun: urug'lantirish sodir bo'lgan
+ * bo'lsa so'nish langari (`decayAnchorDay`) yozilishi SHART, aks holda
+ * urug'lantirilgan qatorlar hech qachon so'nmaydi (§1.1 fossili).
+ */
+export function resolveDecayPair(
+  exposures: number,
+  errors: number,
+  storedDe: number | undefined,
+  storedDx: number | undefined,
+): { de: number; dx: number; seeded: boolean } {
+  if (storedDe === undefined || storedDx === undefined) {
+    return { ...seedDecayed(exposures, errors), seeded: true }
+  }
+  return { de: storedDe, dx: storedDx > storedDe ? storedDe : storedDx, seeded: false }
+}
+
 const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/
 
 /**
@@ -196,20 +227,14 @@ export function parseStatsV1(raw: unknown, today: number): ParseV1Result {
 
     const first = toOptionalDay(value['f'])
     const last = toOptionalDay(value['l'])
-    const storedDe = toOptionalCount(value['de'])
-    const storedDx = toOptionalCount(value['dx'])
-
-    // Ikkalasi ham bo'lgandagina saqlangan juftlik ishlatiladi. Yarmi yo'q
-    // qator ISHONCHSIZ: `dx` `de` siz hech qanday ma'no tashimaydi.
-    let decay: { de: number; dx: number }
-    if (storedDe === undefined || storedDx === undefined) {
-      decay = seedDecayed(exposures, errors)
-      // Urug'lantirish sodir bo'ldi -> langar kerak. Bayroq QATOR bo'yicha
-      // emas, HUJJAT bo'yicha: langar bitta.
-      seeded = true
-    } else {
-      decay = { de: storedDe, dx: storedDx > storedDe ? storedDe : storedDx }
-    }
+    const decay = resolveDecayPair(
+      exposures,
+      errors,
+      toOptionalCount(value['de']),
+      toOptionalCount(value['dx']),
+    )
+    // Bayroq QATOR bo'yicha emas, HUJJAT bo'yicha: langar bitta.
+    if (decay.seeded) seeded = true
 
     words[word] = {
       exposures,

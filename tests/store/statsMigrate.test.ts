@@ -33,6 +33,7 @@ import type { DayRow, LifetimeMeta, WordRow } from '../../src/store/statsSchema.
 import {
   META_KEY_V1_MIGRATED_AT,
   buildMigration,
+  mergeWordRows,
   migrateV1ToV2,
 } from '../../src/store/statsMigrate.ts'
 
@@ -894,5 +895,309 @@ describe("so'nish langari — `decayAnchorDay`", () => {
     // "noma'lum (migratsiyagacha)" deb chiziladi.
     expect('l' in orphan).toBe(false)
     expect('f' in orphan).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ⚠️ MIGRATSIYA OYNASIDAGI POYGA (ko'rikning "JIDDIY 2" topilmasi)
+// ---------------------------------------------------------------------------
+//
+// `migrateV1ToV2()` ning yozuv tranzaksiyasi `loadStatsV1()` + `buildMigration()`
+// TUGAGANDAN KEYIN ochiladi, ular esa 2 MB hujjat uchun o'nlab ms yeydi. O'sha
+// oynada omborga tushgan JONLI qator — agar `writePlan` ko'r `put()` qilsa —
+// butunlay ustidan yozilardi: seans qatori diskda qolib, uning so'z/kun/umrbod
+// hissasi yo'qolardi.
+//
+// ⭐ TEST HOLATNI SINAYDI, TAYMERNI EMAS. Poyganing kuzatiladigan natijasi
+// bitta: "marker HALI YO'Q, lekin do'konlarda jonli qatorlar BOR". Testlar
+// aynan shu holatni qo'yadi va migratsiyani undan keyin ishga tushiradi.
+// Ikkita va'dani haqiqiy vaqtda musobaqalashtirish ayni shartni tekshirib,
+// ustiga `fake-indexeddb` navbatiga bog'liq beqarorlik qo'shardi.
+//
+// ⚠️ BU HOLAT `writeSentences` DAGI QOROVULDAN KEYIN HAM YETIB BORILADIGAN
+// (`stats.ts`, §9 qorovuli). Qorovul TAB ICHIDA tartib beradi; bu yerda esa
+// ikkita boshqa yo'l qoladi:
+//   (a) IKKINCHI TAB — uning migratsiyasi va yozuvi mustaqil, qorovul
+//       ular orasida hech narsa kafolatlamaydi;
+//   (b) YIQILGAN MIGRATSIYA — qorovul yozuvni O'TKAZIB YUBORADI (ombor
+//       nosozligi foydalanuvchining mashqini yeb qo'ymasin), ya'ni keyingi
+//       urinish aynan shu "jonli qator bor, marker yo'q" holatini ko'radi.
+describe("⚠️ migratsiya oynasidagi yozuv — `writePlan` o'qi-birlashtir-yoz", () => {
+  const RACE_LESSON = 'race-l1'
+  const RACE_SENTENCES = ['Alpha beta gamma.']
+
+  /** v1 ombori: bitta so'z (10 ta'sirlanish) va bitta kun (900 to'g'ri bosish). */
+  function raceV1(over: Partial<StatsData> = {}): StatsData {
+    return {
+      version: 1,
+      sessions: [],
+      words: { alpha: { exposures: 10, errors: 2 } },
+      days: { [KEY_1]: { correctKeystrokes: 900, activeMs: 600_000, sentences: 9 } },
+      ...over,
+    }
+  }
+
+  /**
+   * Migratsiya oynasida `writeSentences` qoldirgan qatorlar.
+   *
+   * `*Since` uchtasi BUGUNGA qo'yilgan — bu `lifetimeForWrite` ning ta'mir
+   * shoxi: konvert hali yo'q edi, ya'ni yozuv "shu kundan beri" degan belgini
+   * o'zi qo'yishga majbur.
+   */
+  const LIVE_WORD: WordRow = { w: 'alpha', e: 1, x: 0, de: 1, dx: 0, s: 1, b: 1, f: DAY_1, l: DAY_1 }
+  const LIVE_DAY: DayRow = {
+    d: KEY_1,
+    correctKeystrokes: 48,
+    activeMs: 60_000,
+    sentences: 1,
+    k: 50,
+    nc: 48,
+  }
+  const LIVE_LIFETIME: LifetimeMeta = {
+    activeMs: 60_000,
+    correctKeystrokes: 48,
+    netChars: 48,
+    sessions: 1,
+    keystrokes: 50,
+    netCharsSince: DAY_1,
+    sessionsSince: DAY_1,
+    keystrokesSince: DAY_1,
+  }
+
+  /** Do'konlarga TO'G'RIDAN-TO'G'RI yozadi — "boshqa yozuvchi ulgurdi" holati. */
+  async function seedLive(data: {
+    words?: readonly WordRow[]
+    days?: readonly DayRow[]
+    sessions?: readonly SessionRecord[]
+    lifetime?: LifetimeMeta
+  }): Promise<void> {
+    const db = await open()
+    await runTx(db, [STORE_WORDS, STORE_DAYS, STORE_SESSIONS, STORE_META], 'readwrite', (tx) => {
+      for (const row of data.words ?? []) tx.objectStore(STORE_WORDS).put(row)
+      for (const row of data.days ?? []) tx.objectStore(STORE_DAYS).put(row)
+      for (const row of data.sessions ?? []) tx.objectStore(STORE_SESSIONS).put(row)
+      if (data.lifetime !== undefined) {
+        tx.objectStore(STORE_META).put(data.lifetime, META_KEY_LIFETIME)
+      }
+    })
+  }
+
+  it("⭐ ko'rikning aynan stsenariysi: 11 ta'sirlanish / 948 to'g'ri bosish / 1 seans", async () => {
+    seedV1(raceV1())
+    seedLessons([{ id: RACE_LESSON, sentences: RACE_SENTENCES }])
+    await seedLive({
+      words: [LIVE_WORD],
+      days: [LIVE_DAY],
+      sessions: [session('live-1', RACE_LESSON, AT_1, [rec({ sentenceIndex: 0, at: AT_1 })])],
+      lifetime: LIVE_LIFETIME,
+    })
+
+    await migrateV1ToV2()
+
+    const db = await open()
+    // ⚠️ KO'R `put()` DA BU SONLAR 10 / 900 / 0 CHIQADI — jonli qatorlar
+    // butunlay almashtirilib, faqat v1 tarixi qolardi. Uchalasi ham
+    // foydalanuvchi ekranda ko'radigan raqam: `hardestWords` ta'sirlanishi,
+    // bugungi to'g'ri bosishlar va `totals().sessions`.
+    expect((await word(db, 'alpha')).e).toBe(11)
+    expect((await day(db, KEY_1)).correctKeystrokes).toBe(948)
+    expect((await lifetimeOf(db)).sessions).toBe(1)
+  })
+
+  it("umrbod konvertning QOLGAN maydonlari ham qo'shiladi, `max()` bilan olinmaydi", async () => {
+    seedV1(raceV1())
+    seedLessons([{ id: RACE_LESSON, sentences: RACE_SENTENCES }])
+    await seedLive({ lifetime: LIVE_LIFETIME })
+
+    await migrateV1ToV2()
+
+    const lifetime = await lifetimeOf(await open())
+    // v1 `days` dan: 900 to'g'ri bosish, 600 000 ms; jonlidan: 48 va 60 000.
+    expect(lifetime.correctKeystrokes).toBe(948)
+    expect(lifetime.activeMs).toBe(660_000)
+    // v1 da omon qolgan seans YO'Q, ya'ni `netChars`/`keystrokes` ning yagona
+    // manbasi — jonli yozuv. `max()` bo'lganida ular saqlanardi, lekin
+    // `sessions` (1 vs 0) YO'QOLARDI — farq aynan shu yerda ko'rinadi.
+    expect(lifetime.netChars).toBe(48)
+    expect(lifetime.keystrokes).toBe(50)
+  })
+
+  it("kun qatorining `k`/`nc`/chelaklari QO'SHILADI — ALMASHTIRILMAYDI", async () => {
+    // v1 da AYNI kunda omon qolgan seans bor, ya'ni rejadagi kun qatorida ham
+    // `k`/`nc` va `on` chelagi chiqadi: ikkala tomon ham to'la.
+    seedV1(
+      raceV1({
+        sessions: [session('v1-1', RACE_LESSON, AT_1, [rec({ sentenceIndex: 0, at: AT_1, audioEnabled: true })])],
+      }),
+    )
+    seedLessons([{ id: RACE_LESSON, sentences: RACE_SENTENCES }])
+    await seedLive({
+      days: [
+        {
+          ...LIVE_DAY,
+          off: {
+            sentences: 1,
+            activeMs: 60_000,
+            keystrokes: 50,
+            correctKeystrokes: 48,
+            netWeighted: 24 * 60_000,
+            rawWeighted: 25 * 60_000,
+          },
+        },
+      ],
+    })
+
+    const expectedNc = netCharsOf(40, 60_000)
+    await migrateV1ToV2()
+
+    const row = await day(await open(), KEY_1)
+    expect(row.k).toBe(50 + 100)
+    expect(row.nc).toBe(48 + expectedNc)
+    // Chelaklar HAR IKKALASI saqlanadi: jonli yozuv ovozsiz, v1 seansi ovozli.
+    expect(row.off?.sentences).toBe(1)
+    expect(row.on?.sentences).toBe(1)
+  })
+
+  it("so'z qatorida `f` eng ERTA, `l` eng KECH kunni oladi", async () => {
+    // v1 seansi ERTAROQ kunda (`AT_1`), jonli yozuv esa KECHROQ (`AT_2`).
+    seedV1(
+      raceV1({
+        sessions: [session('v1-1', RACE_LESSON, AT_1, [rec({ sentenceIndex: 0, at: AT_1 })])],
+      }),
+    )
+    seedLessons([{ id: RACE_LESSON, sentences: RACE_SENTENCES }])
+    await seedLive({ words: [{ ...LIVE_WORD, f: DAY_2, l: DAY_2 }] })
+
+    await migrateV1ToV2()
+
+    const row = await word(await open(), 'alpha')
+    expect(row.f).toBe(DAY_1)
+    expect(row.l).toBe(DAY_2)
+    // Hisoblagichlar baribir qo'shiladi — `f`/`l` qoidasi ularga tegmaydi.
+    expect(row.e).toBe(11)
+    expect(row.x).toBe(2)
+  })
+
+  it("jonli qatorning SERIYASI (`s`/`b`) nolga tushirilmaydi", async () => {
+    seedV1(raceV1())
+    seedLessons([{ id: RACE_LESSON, sentences: RACE_SENTENCES }])
+    // Migratsiya oynasida yozilgan qator: uchta toza ta'sirlanish ketma-ket,
+    // eng yaxshisi esa oldinroqda beshta bo'lgan.
+    await seedLive({ words: [{ ...LIVE_WORD, s: 3, b: 5 }] })
+
+    await migrateV1ToV2()
+
+    // v1 dan kelgan qatorda seriya YO'Q (`buildMigration` uni tiklay olmaydi,
+    // shuning uchun 0), lekin `l` si jonli qatornikidan ERTA — ya'ni joriy
+    // seriya jonli qatorniki. `Math.min` bo'lganida u 0 ga tushib ketardi.
+    const row = await word(await open(), 'alpha')
+    expect(row.s).toBe(3)
+    expect(row.b).toBe(5)
+  })
+
+  it("jonli SEANS qatori saqlanadi va v1 seanslari uning yoniga qo'shiladi", async () => {
+    seedV1(
+      raceV1({
+        sessions: [session('v1-1', RACE_LESSON, AT_1, [rec({ sentenceIndex: 0, at: AT_1 })])],
+      }),
+    )
+    seedLessons([{ id: RACE_LESSON, sentences: RACE_SENTENCES }])
+    await seedLive({
+      sessions: [session('live-1', RACE_LESSON, AT_2, [rec({ sentenceIndex: 0, at: AT_2 })])],
+    })
+
+    await migrateV1ToV2()
+
+    // `sessions` do'koni ATAYIN ko'r `put` bo'lib qoladi: v1 seanslarining `id`
+    // lari ESKI build tomonidan ajratilgan, oynada yozilgani esa YANGI seans.
+    const ids = (await readAllRows<SessionRecord>(await open(), STORE_SESSIONS))
+      .map((row) => row.id)
+      .sort()
+    expect(ids).toEqual(['live-1', 'v1-1'])
+  })
+
+  it("diskdagi NOTANISH maydonlar birlashtirishdan omon o'tadi (§9.2)", async () => {
+    seedV1(raceV1())
+    seedLessons([{ id: RACE_LESSON, sentences: RACE_SENTENCES }])
+    await seedLive({
+      words: [{ ...LIVE_WORD, future: 'keep' } as WordRow & { future: string }],
+      days: [{ ...LIVE_DAY, future: 'keep' } as DayRow & { future: string }],
+      lifetime: { ...LIVE_LIFETIME, future: 'keep' } as LifetimeMeta & { future: string },
+    })
+
+    await migrateV1ToV2()
+
+    const db = await open()
+    expect((await word(db, 'alpha')) as WordRow & { future?: string }).toMatchObject({
+      future: 'keep',
+    })
+    expect((await day(db, KEY_1)) as DayRow & { future?: string }).toMatchObject({ future: 'keep' })
+    expect((await lifetimeOf(db)) as LifetimeMeta & { future?: string }).toMatchObject({
+      future: 'keep',
+    })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// `mergeWordRows` — SOF birlashtirish qoidasi
+// ---------------------------------------------------------------------------
+//
+// ⚠️ NEGA ALOHIDA, IDB'SIZ BLOK. Bu funksiya UCH joyda ishlatiladi va ularning
+// har birida `a` boshqa narsani anglatadi: `buildMigration` (v1 ichidagi kalit
+// to'qnashuvi, ikkala qator ham urug'), `writePlan` (`a` = DISKDAGI jonli
+// qator) va `stats.ts` dagi `importJson` (`a` = zaxira faylining birinchi
+// qatori). Migratsiya orqali sinash faqat BIRINCHI ikkitasini qamraydi —
+// `s`/`b` qoidasining ahamiyati esa aynan UCHINCHISIDA ko'rinadi, chunki
+// migratsiya rejasidagi qatorda `s`/`b` HAR DOIM 0.
+describe('mergeWordRows — seriya va notanish maydonlar qoidasi', () => {
+  const row = (over: Partial<WordRow>): WordRow => ({
+    w: 'w',
+    e: 0,
+    x: 0,
+    de: 0,
+    dx: 0,
+    s: 0,
+    b: 0,
+    ...over,
+  })
+
+  it("⭐ `b` — IKKALA tarixning MAKSIMUMI: hech biri ikkinchisining rekordini pasaytirmaydi", () => {
+    // Aynan shu holat `importJson` da yetib boriladi: `"The"` va `"the"` —
+    // bir so'zning ikkita yarim tarixi, ikkalasida ham HAQIQIY rekord bor.
+    // `b = a.b` bo'lganida `b` tomonning eng yaxshi seriyasi JIMGINA yo'qolardi.
+    expect(mergeWordRows(row({ b: 3, l: 10 }), row({ b: 9, l: 5 })).b).toBe(9)
+    expect(mergeWordRows(row({ b: 9, l: 10 }), row({ b: 3, l: 5 })).b).toBe(9)
+  })
+
+  it("`b` hech qachon `s` dan kichik bo'lmaydi", () => {
+    // `s` — joriy seriya, `b` — eng yaxshisi: `b < s` o'z-o'ziga zid holat va u
+    // faqat diskdagi buzuq qatordan kelib chiqadi.
+    expect(mergeWordRows(row({ s: 7, b: 0, l: 10 }), row({ b: 0, l: 5 })).b).toBe(7)
+  })
+
+  it("`s` — `l` si KECHROQ qatorniki (joriy seriya eng so'nggi ta'sirlanishga tegishli)", () => {
+    expect(mergeWordRows(row({ s: 3, l: 10 }), row({ s: 8, l: 5 })).s).toBe(3)
+    expect(mergeWordRows(row({ s: 3, l: 5 }), row({ s: 8, l: 10 })).s).toBe(8)
+  })
+
+  it("sana NOMA'LUM yoki TENG bo'lsa `s` ning KICHIGI olinadi — eng konservativ taxmin", () => {
+    // Aralashgan tarixda seriya faqat UZILISHI mumkin, uzayishi emas.
+    expect(mergeWordRows(row({ s: 3, l: 7 }), row({ s: 8, l: 7 })).s).toBe(3)
+    expect(mergeWordRows(row({ s: 3 }), row({ s: 8 })).s).toBe(3)
+    // Bir tomonda sana bor, ikkinchisida yo'q -> SANALISI g'olib.
+    expect(mergeWordRows(row({ s: 3, l: 10 }), row({ s: 8 })).s).toBe(3)
+    expect(mergeWordRows(row({ s: 3 }), row({ s: 8, l: 10 })).s).toBe(8)
+  })
+
+  it("`a` ning NOTANISH maydonlari saqlanadi, `f`/`l` esa spread'dan CHIQARILADI (§9.2, §9.1)", () => {
+    const merged = mergeWordRows(
+      { ...row({ e: 1 }), future: 'keep' } as WordRow & { future: string },
+      row({ e: 2 }),
+    )
+    expect(merged as WordRow & { future?: string }).toMatchObject({ future: 'keep' })
+    // ⚠️ Ikkala tomonda ham sana yo'q -> maydon UMUMAN bo'lmasligi SHART,
+    // aks holda `by_l` indeksiga `undefined` bilan tushardi (§9.1).
+    expect('l' in merged).toBe(false)
+    expect('f' in merged).toBe(false)
   })
 })

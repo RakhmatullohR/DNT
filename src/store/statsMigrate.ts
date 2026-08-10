@@ -27,12 +27,13 @@
 // "ko'chirildimi" degan javob v1 kalitining borligiga BOG'LIQ EMAS.
 
 import { tokenize } from '../core/tokenize.ts'
-import { SHRINKAGE_M, dayNumber } from '../core/wordScore.ts'
+import { dayNumber } from '../core/wordScore.ts'
 import { getLesson } from './lessons.ts'
 import { openDb, runTx } from './statsDb.ts'
 import {
   META_KEY_DECAY_ANCHOR_DAY,
   META_KEY_LIFETIME,
+  META_KEY_MIXED_ERA_DAY,
   STORE_DAYS,
   STORE_META,
   STORE_SESSIONS,
@@ -47,7 +48,7 @@ import {
   toOptionalDay,
 } from './statsSchema.ts'
 import type { DayRow, LifetimeMeta, SessionRecord, WordRow } from './statsSchema.ts'
-import { loadStatsV1 } from './statsV1.ts'
+import { loadStatsV1, seedDecayed } from './statsV1.ts'
 import type { StatsDataV1 } from './statsV1.ts'
 
 /**
@@ -110,21 +111,6 @@ export type MigrationPlan = {
 // ---------------------------------------------------------------------------
 
 /**
- * §6.5 cold-start urug'lantirish, `de`/`dx` yo'q qator uchun.
- *
- * Amalda bu yo'lga `loadStatsV1()` ORQALI kelinmaydi: `parseStatsV1` `de`/`dx`
- * ni o'zi urug'lantiradi va `exposures: 0` qatorlarini tashlaydi. Lekin
- * `WordStatV1.de`/`dx` TIP darajasida ixtiyoriy, ya'ni `buildMigration` ga
- * to'g'ridan-to'g'ri berilgan hujjatda ular bo'lmasligi mumkin — shuning uchun
- * qoida bu yerda ham bajariladi, "bo'lmaydi" degan taxminga tayanmasdan.
- */
-function seedDecayed(exposures: number, errors: number): { de: number; dx: number } {
-  const de = exposures < SHRINKAGE_M ? exposures : SHRINKAGE_M
-  // `exposures > 0` bo'lsagina chaqiriladi (pastdagi qatorga qarang).
-  return { de, dx: (errors * de) / exposures }
-}
-
-/**
  * Ikkita ixtiyoriy kun raqamidan bittasi: biri yo'q bo'lsa MAVJUDI g'olib,
  * ikkalasi ham bor bo'lsa `pick` (`f` uchun `Math.min`, `l` uchun `Math.max`).
  *
@@ -142,17 +128,50 @@ function pickDay(
 }
 
 /**
+ * `s` — JORIY toza seriya, ya'ni u ENG SO'NGGI ta'sirlanishga tegishli.
+ * Shuning uchun `l` si KECHROQ qatorniki olinadi: eskirog'ining seriyasi
+ * oradagi ta'sirlanishlar bilan allaqachon uzilgan bo'lishi mumkin.
+ *
+ * Sanalar teng yoki NOMA'LUM bo'lsa KICHIGI olinadi — bu eng konservativ
+ * taxmin: aralashgan tarixda seriya faqat UZILISHI mumkin, uzayishi emas,
+ * ya'ni "eng yaxshi seriya" bo'rttirilmaydi (`nextWordRow` dagi bilan bir xil
+ * mulohaza).
+ */
+function pickStreak(a: WordRow, b: WordRow): number {
+  if (a.l === undefined) return b.l === undefined ? Math.min(a.s, b.s) : b.s
+  if (b.l === undefined) return a.s
+  if (a.l === b.l) return Math.min(a.s, b.s)
+  return a.l > b.l ? a.s : b.s
+}
+
+/**
  * Kalit normallashtirilgandan keyin to'qnashgan ikkita qatorni birlashtiradi
  * (§2.5): hisoblagichlar QO'SHILADI, `f` — eng erta, `l` — eng kech kun.
- *
- * `s`/`b` baribir 0 (yuqoridagi izoh: seriyani tiklab bo'lmaydi), shuning
- * uchun ular uchun birlashtirish qoidasi ham kerak emas.
  *
  * ⚠️ Qo'shishdan keyin `x <= e` va `dx <= de` invariantlari QAYTA
  * o'rnatiladi. Kirish qatorlari alohida-alohida bu shartni qanoatlantirgan
  * bo'lsa yig'indi ham qanoatlantiradi, lekin `buildMigration` ga v1 parseridan
  * O'TMAGAN hujjat ham berilishi mumkin — o'shanda `dx > de` ball shkalasini
  * 1 dan oshirib yuborardi.
+ *
+ * ⭐ `...rest` (ya'ni `a` ning qolgan maydonlari) BIRINCHI — §9.2 ning
+ * oldinga moslik yumshatishi: har bir o'qi-o'zgartir-yoz zanjiri qatorni
+ * `{ ...current, <ma'lum maydonlar> }` bilan qayta yozadi, ya'ni notanish
+ * maydon yo'qolmaydi. `f`/`l` esa spread'dan ATAYIN chiqarib tashlangan:
+ * `a` da `f: undefined` OWN maydon bo'lib qolsa, `'l' in row === false`
+ * shartiga tayanadigan §9.1 kafolati (`by_l` indeksiga tushmaslik) buzilardi.
+ *
+ * ⭐ `s`/`b` ENDI ZO'RLAB NOLGA TUSHIRILMAYDI. Ilgari shunday edi va sabab
+ * ham to'g'ri yozilgan edi — v1 hujjatidan seriyani tiklab bo'lmaydi, ya'ni
+ * `buildMigration` ichidagi to'qnashuvda ikkala qator ham 0. Lekin funksiya
+ * KEYIN ikkita boshqa joyda ishlatila boshladi va u yerda `a` — DISKDAGI
+ * jonli qator: `writePlan` uni migratsiya oynasida yozilgan qator bilan,
+ * `importJson` esa zaxira faylining ikkita yarim qatori bilan birlashtiradi.
+ * Ikkalasida ham `s`/`b` HAQIQIY, va nolga tushirish `nextWordRow` sanagan
+ * seriyani jimgina yo'q qilardi.
+ *
+ * `b` — "eng yaxshi" ta'rifi bo'yicha MAKSIMUM: ikkita tarixning hech biri
+ * ikkinchisining rekordini pasaytira olmaydi.
  *
  * EKSPORT qilinadi: `stats.ts` dagi `importJson` v2 faylida ham AYNI
  * to'qnashuvga duch kelishi mumkin (qo'lda tahrirlangan yoki begona zaxira),
@@ -167,15 +186,19 @@ export function mergeWordRows(a: WordRow, b: WordRow): WordRow {
 
   const f = pickDay(a.f, b.f, Math.min)
   const l = pickDay(a.l, b.l, Math.max)
+  const s = pickStreak(a, b)
+
+  const { f: _droppedF, l: _droppedL, ...rest } = a
 
   return {
+    ...rest,
     w: a.w,
     e,
     x: x > e ? e : x,
     de,
     dx: dx > de ? de : dx,
-    s: 0,
-    b: 0,
+    s,
+    b: Math.max(a.b, b.b, s),
     ...(f === undefined ? {} : { f }),
     ...(l === undefined ? {} : { l }),
   }
@@ -316,6 +339,13 @@ export function buildMigration(stats: StatsDataV1, lessons: LessonSentences): Mi
     const word = rawWord.trim().toLowerCase()
     if (word === '') continue // `recordSession` bilan bir xil qoida.
 
+    // §6.5 urug'lantirish. Bu shoxga `loadStatsV1()` ORQALI kelinmaydi
+    // (`parseStatsV1` `de`/`dx` ni o'zi urug'lantiradi va `exposures: 0`
+    // qatorlarini tashlaydi), lekin `WordStatV1.de`/`dx` TIP darajasida
+    // ixtiyoriy: `buildMigration` ga to'g'ridan-to'g'ri berilgan hujjatda ular
+    // bo'lmasligi mumkin. Qoida shuning uchun bu yerda ham bajariladi —
+    // "bo'lmaydi" degan taxminga tayanmasdan. Formula `statsV1.ts` dan
+    // IMPORT qilinadi: uchinchi nusxa uchta har xil urug'ga ajralib ketardi.
     const decay =
       stat.de === undefined || stat.dx === undefined
         ? seedDecayed(stat.exposures, stat.errors)
@@ -697,6 +727,16 @@ function writePlan(db: IDBDatabase, plan: MigrationPlan, at: number): Promise<bo
         }
 
         meta.put(plan.seedAnchorDay ?? dayNumber(at), META_KEY_DECAY_ANCHOR_DAY)
+
+        // ⭐ ARALASH DAVR CHEGARASI — FAQAT v1 kun qatorlari haqiqatan
+        // ko'chirilgan bo'lsa (`PLAN.md` §11.3, 10-invariant). Aynan o'shalar
+        // baza uchtasini `k`/`nc` siz olib keladi, ya'ni nisbatni ikki xil
+        // gaplar to'plamidan yig'adigan yagona manba.
+        //
+        // ⚠️ Markerning O'ZIDAN foydalanib bo'lmaydi: u bo'sh v1 ombori uchun
+        // ham yoziladi, ya'ni har bir YANGI foydalanuvchida ham bor. Farqni
+        // `META_KEY_MIXED_ERA_DAY` izohi batafsil yozadi.
+        if (plan.days.length > 0) meta.put(dayNumber(at), META_KEY_MIXED_ERA_DAY)
         // Marker OXIRIDA: tranzaksiya atomik bo'lgani uchun tartib
         // to'g'rilikka ta'sir qilmaydi, lekin o'qiganda niyat shu tartibda
         // ko'rinadi — "hammasi yozildi, endi belgilandi".

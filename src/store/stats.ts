@@ -56,6 +56,7 @@ import {
   INDEX_SESSIONS_BY_ENDED_AT,
   META_KEY_DECAY_ANCHOR_DAY,
   META_KEY_LIFETIME,
+  META_KEY_MIXED_ERA_DAY,
   STORE_DAYS,
   STORE_META,
   STORE_SESSIONS,
@@ -92,7 +93,7 @@ import type {
   SessionRecord,
   WordRow,
 } from './statsSchema.ts'
-import { clearV1, parseStatsV1, seedDecayed } from './statsV1.ts'
+import { clearV1, parseStatsV1, resolveDecayPair } from './statsV1.ts'
 
 export type { AudioBucket, AudioComparison, SentenceRecord, SessionEnvelope, SessionRecord }
 
@@ -161,24 +162,84 @@ export const G_ORDER_FLIP = orderFlipG(SHRINKAGE_M)
 export type StatsAvailability = 'ready' | 'unavailable' | 'blocked'
 
 /**
- * Faqat ULANISHNI tekshiradi — migratsiya ham, qisqartirish ham qilmaydi.
+ * Ishga tushgan migratsiya, ULANISH bo'yicha keshlangan.
+ *
+ * ⭐ NEGA MEMOIZATSIYA UMUMAN BOR. `Practice.tsx` — omborga YOZADIGAN yagona
+ * ekran va `initStats()` ni chaqirmaydigan yagona ekran. Ya'ni "avval
+ * migratsiya" qoidasi aynan YOZUV yo'lida hech narsa bilan majburlanmagan edi:
+ * `main.tsx` `void initStats()` chiqaradi, foydalanuvchi esa o'sha oynada
+ * gapni tugatishi mumkin. Qorovulni `Practice.tsx` ga qo'yish uni KELAJAKDAGI
+ * har bir yozadigan chaqiruvchining vazifasiga aylantirardi — konvensiya,
+ * kafolat emas. Shuning uchun u OMBORNING O'ZIDA (`writeSentences` boshida).
+ *
+ * ⭐ NEGA KALIT — ULANISH, MODUL DARAJASIDAGI BAYROQ EMAS. Bu WeakMap'ning
+ * yashash muddati aynan ulanishnikiga teng, ya'ni:
+ *   - `db.onclose` (foydalanuvchi tab ochiq turganda sayt ma'lumotini tozaladi)
+ *     yoki `onversionchange` dan keyin `openDb()` YANGI havola qaytaradi va
+ *     migratsiya QAYTA tekshiriladi — bayroq bo'lsa, bo'shatilgan bazada u
+ *     "ko'chirilgan" deb yolg'on aytib turardi;
+ *   - testlar orasida `closeDb()` + `deleteDb()` keshni O'ZI bekor qiladi,
+ *     ya'ni faqat testga xizmat qiladigan `resetMigration()` API si KERAK EMAS
+ *     (bu ilgari memoizatsiyadan voz kechish sababi edi).
+ */
+const migrations = new WeakMap<IDBDatabase, Promise<void>>()
+
+/**
+ * Shu ulanish uchun migratsiyani BIR MARTA ishga tushiradi; qolgan hamma
+ * chaqiruvchi AYNI va'dani kutadi.
+ *
+ * ⚠️ HECH QACHON RAD ETMAYDI. Qorovul yozuvni to'xtatish uchun emas,
+ * TARTIBLASH uchun: migratsiya yiqilsa ham gap diskka tushishi SHART, aks
+ * holda ombor nosozligi foydalanuvchining mashqini yeb qo'yardi.
+ *
+ * ⚠️ MUVAFFAQIYATSIZ URINISH KESHLANMAYDI. `migrateV1ToV2()` bloklanishni
+ * (§8.4b) ham, kutilmagan xatoni ham `ok: false` ga aylantiradi — ikkalasi ham
+ * VAQTINCHALIK. Keshlansa "keyingi chaqiruvda qayta uriniladi" va'dasi
+ * buzilardi va v1 tarixi shu tab yopilguncha ko'chmay qolardi. Qayta urinish
+ * arzon: bloklanishda `openDb()` darrov tashlaydi, ko'chirilgan omborda esa
+ * marker tekshiruvi bitta `get`.
+ */
+function ensureMigrated(db: IDBDatabase): Promise<void> {
+  const cached = migrations.get(db)
+  if (cached !== undefined) return cached
+
+  let pending: Promise<void>
+  // Kesh faqat SHU urinishni unutadi: keyingi chaqiruv boshlagan yangi va'da
+  // kechikkan `forget` tufayli o'chib ketmasin.
+  const forget = (): void => {
+    if (migrations.get(db) === pending) migrations.delete(db)
+  }
+
+  pending = migrateV1ToV2().then((result) => {
+    if (!result.ok) forget()
+  }, forget)
+
+  migrations.set(db, pending)
+  return pending
+}
+
+/**
+ * Ulanish + shu ulanish uchun migratsiya. Qaytgan holat BANNER uchun (§8.4d).
  *
  * ⚠️ ATAYIN EKSPORT QILINMAGAN. Ekranlar shuni chaqirishga juda o'xshaydi
- * (ularga faqat banner uchun holat kerak), lekin bu POYGA yasardi: banner
- * chiqadi-yu, ekran migratsiya TUGAMASDAN o'qishni boshlardi va bo'sh
- * statistikani ko'rsatib qo'yardi. Yagona ommaviy kirish nuqtasi —
- * `initStats()`.
+ * (ularga faqat banner uchun holat kerak), lekin yagona ommaviy kirish nuqtasi
+ * `initStats()` bo'lib qolishi kerak: u ustiga retention qisqartirishini ham
+ * bajaradi.
  */
-async function statsAvailability(): Promise<StatsAvailability> {
+async function ensureReady(): Promise<StatsAvailability> {
+  let db: IDBDatabase | null
   try {
-    const db = await openDb()
-    return db === null ? 'unavailable' : 'ready'
+    db = await openDb()
   } catch (err) {
     // (§8.4b) Bloklanish YAGONA "tuzatiladigan" nosozlik, shuning uchun u
     // "IDB yo'q" bilan ARALASHTIRILMAYDI.
     if (err instanceof StatsDbBlockedError) return 'blocked'
     return 'unavailable'
   }
+  if (db === null) return 'unavailable'
+
+  await ensureMigrated(db)
+  return 'ready'
 }
 
 /**
@@ -197,11 +258,9 @@ async function statsAvailability(): Promise<StatsAvailability> {
  *   2. BANNER (§8.4d) uchun holat baribir shu yerdan keladi.
  *
  * ⚠️ Takroriy chaqiruv ARZON va XAVFSIZ: `openDb()` ulanishni keshlaydi,
- * migratsiya IDEMPOTENT (`v1MigratedAt` markeri, atomik "tekshir-va-yoz"),
- * qisqartirish esa chegaraga yetmagan birinchi qatorda TO'XTAYDI. Ya'ni
- * ko'chirilgan omborda bu ikkita mayda tranzaksiya. Memoizatsiya ATAYIN
- * qo'shilmagan: u modul darajasida holat yaratardi va uni testlar orasida
- * tozalash uchun faqat testga xizmat qiladigan API kerak bo'lardi.
+ * migratsiya BIR MARTA ishlaydi (`ensureMigrated`) va o'zi ham IDEMPOTENT
+ * (`v1MigratedAt` markeri, atomik "tekshir-va-yoz"), qisqartirish esa
+ * chegaraga yetmagan birinchi qatorda TO'XTAYDI.
  *
  * ⚠️ Migratsiya/qisqartirish XATOSI `ready` ni buzmaydi. Bu qasddan: qaytadigan
  * qiymat "ombor ISHLAYAPTIMI" degan savolga javob beradi (banner shuning uchun
@@ -210,11 +269,10 @@ async function statsAvailability(): Promise<StatsAvailability> {
  * chaqiruvda qayta uriniladi.
  */
 export async function initStats(now: number = Date.now()): Promise<StatsAvailability> {
-  const availability = await statsAvailability()
+  const availability = await ensureReady()
   if (availability !== 'ready') return availability
 
   try {
-    await migrateV1ToV2()
     await compactSessions(now)
   } catch (err) {
     if (err instanceof StatsDbBlockedError) return 'blocked'
@@ -570,6 +628,26 @@ function nextDayRow(current: DayRow | undefined, key: string, delta: DayDelta): 
  * BIRGA keladi (`planSentenceWrite`), ya'ni "hammasi Escape bilan tashlangan
  * seans hech narsa yozmaydi" darvozasi (PLAN §7) buzilmaydi.
  *
+ * ⭐ §9 QOROVULI — MIGRATSIYA AVVAL. Yozuv migratsiya tugagunicha
+ * BOSHLANMAYDI. Qorovul aynan shu yerda, `Practice.tsx` da EMAS: u yozadigan
+ * yagona ekran va `initStats()` ni chaqirmaydigan yagona ekran, ya'ni tartib
+ * ilgari faqat KONVENSIYA bilan ushlab turilardi va oyna real edi
+ * (`main.tsx` `void initStats()` chiqaradi, gap esa o'sha paytda tugashi
+ * mumkin). Chaqiruvchiga qo'yilgan qorovul keyingi yozadigan chaqiruvchi
+ * paydo bo'lganda jimgina yo'qolardi; ombordagisi — yo'qolmaydi.
+ *
+ * ⚠️ Bu POYGANI YO'Q QILADI, `writePlan` dagi o'qi-birlashtir-yozni ORTIQCHA
+ * QILMAYDI: qorovul TAB ICHIDA ishlaydi, ikkinchi tab esa o'z migratsiyasini
+ * mustaqil yuritadi. Ustiga migratsiya YIQILSA qorovul yozuvni o'tkazib
+ * yuboradi (yuqoridagi izoh) — o'shanda diskda migratsiyadan OLDIN yozilgan
+ * jonli qatorlar paydo bo'ladi va keyingi urinishdagi birlashtirish ularni
+ * saqlab qoladi. Ikkalasi ikki xil qatlam: qorovul TARTIB, birlashtirish esa
+ * MA'LUMOTNI YO'QOTMASLIK.
+ *
+ * ⚠️ `writeSessionEnvelope` da qorovul KERAK EMAS va u ATAYIN qo'shilmagan:
+ * u faqat MAVJUD seans qatorini yangilaydi, seans qatori esa shu yerdan
+ * chiqadi — ya'ni unga yetib borilgan bo'lsa migratsiya allaqachon tugagan.
+ *
  * `false` — IDB yo'q (§8.4d). Chaqiruvchi buni xato deb ko'tarmaydi: banner
  * allaqachon `initStats()` natijasidan chiqadi.
  */
@@ -579,6 +657,13 @@ export async function writeSentences(
   records: readonly SentenceWrite[],
 ): Promise<boolean> {
   if (sessionId === '' || records.length === 0) return false
+
+  // ⭐ Qorovul (yuqoridagi izoh). Natijasi ATAYIN e'tiborsiz qoldiriladi:
+  // `ensureReady()` "ombor ishlayaptimi" degan savolga javob beradi, yozuvning
+  // O'ZI esa pastdagi `withStatsDb` da baribir qayta urinib ko'radi va IDB
+  // yo'q bo'lsa `false` qaytaradi — bu yerda erta chiqish xatti-harakatni
+  // ikki joyda ikki xil qilardi.
+  await ensureReady()
 
   // (§8.4a) BUTUN hisob tranzaksiyadan OLDIN.
   const plan = planWrite(records)
@@ -855,19 +940,6 @@ function foldRatioWindow(rows: readonly DayRow[]): RatioWindow {
   return window
 }
 
-/**
- * `meta[v1MigratedAt]` xom qiymatidan (ms tamg'asi) migratsiya KUNI.
- *
- * `undefined` — marker yo'q yoki buzuq. O'shanda oyna CHEKLANMAYDI: markersiz
- * ombor migratsiyadan umuman o'tmagan, ya'ni har bir kun qatori v2 yozuv yo'li
- * bilan yozilgan va aralashish manbaining o'zi yo'q.
- */
-function toMigratedDay(raw: unknown): number | undefined {
-  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0) return undefined
-  const day = dayNumber(raw)
-  return Number.isFinite(day) ? day : undefined
-}
-
 /** `totals()` ning BITTA tranzaksiyada o'qiladigan xom holati. */
 type TotalsSnapshot = {
   lifetime: LifetimeMeta
@@ -887,37 +959,36 @@ export async function totals(): Promise<Totals | null> {
         // Konvert yo'q — `collect` CHAQIRILMAYDI, natija `null` bo'lib qoladi.
         if (lifetime === null) return
 
-        const markerReq = meta.get(META_KEY_V1_MIGRATED_AT)
-        markerReq.onsuccess = () => {
-          const migratedDay = toMigratedDay(markerReq.result)
+        // ⭐ Chegara `v1MigratedAt` MARKERIDAN emas, alohida
+        // `META_KEY_MIXED_ERA_DAY` dan o'qiladi — farqni o'sha maydonning
+        // izohi batafsil yozadi. Qisqasi: marker "tekshirildi" degani va u
+        // bo'sh v1 ombori uchun ham yoziladi, ya'ni undan foydalanish HAR BIR
+        // YANGI foydalanuvchining o'rnatilgan kunini oynadan chiqarib
+        // tashlardi.
+        const boundaryReq = meta.get(META_KEY_MIXED_ERA_DAY)
+        boundaryReq.onsuccess = () => {
+          const mixedUntil = toOptionalDay(boundaryReq.result)
           const days = tx.objectStore(STORE_DAYS)
 
-          // ⚠️ BUTUN do'kon SKANERLANMAYDI: kun kalitlari ('YYYY-MM-DD')
-          // leksikografik tartibda xronologik, shuning uchun oyna kalit
-          // ORALIG'I bilan olinadi va migratsiyadan oldingi (odatda eng katta)
-          // qism umuman o'qilmaydi.
           const rowsReq =
-            migratedDay === undefined
-              ? days.getAll()
-              : days.getAll(IDBKeyRange.lowerBound(dayNumberToKey(migratedDay + 1)))
+            mixedUntil === undefined
+              ? // Aralash davr yo'q: har bir kun qatori v2 yozuv yo'li bilan
+                // yozilgan, ya'ni to'rtala maydon ham AYNI gaplardan.
+                days.getAll()
+              : // ⚠️ BUTUN do'kon SKANERLANMAYDI: kun kalitlari ('YYYY-MM-DD')
+                // leksikografik tartibda xronologik, shuning uchun oyna kalit
+                // ORALIG'I bilan olinadi va aralash (odatda eng katta) qism
+                // umuman o'qilmaydi.
+                days.getAll(IDBKeyRange.lowerBound(dayNumberToKey(mixedUntil + 1)))
 
           rowsReq.onsuccess = () => {
-            const window = foldRatioWindow(rowsReq.result as DayRow[])
-            if (migratedDay === undefined) {
-              collect({ lifetime, window, ratiosSince: undefined })
-              return
-            }
-
-            // `ratiosSince` FAQAT oyna TOR bo'lganda. `count()` indeks
-            // metama'lumotidan chiqadi — qatorlar o'qilmaydi.
-            const earlierReq = days.count(IDBKeyRange.upperBound(dayNumberToKey(migratedDay)))
-            earlierReq.onsuccess = () => {
-              collect({
-                lifetime,
-                window,
-                ratiosSince: earlierReq.result > 0 ? migratedDay + 1 : undefined,
-              })
-            }
+            collect({
+              lifetime,
+              window: foldRatioWindow(rowsReq.result as DayRow[]),
+              // `ratiosSince` FAQAT oyna TOR bo'lganda — u UI ga "bu nisbat
+              // umrbod emas, falon kundan beri" deb aytadigan yagona signal.
+              ratiosSince: mixedUntil === undefined ? undefined : mixedUntil + 1,
+            })
           }
         }
       }
@@ -1562,18 +1633,10 @@ function toWordRow(raw: unknown): { row: WordRow; seeded: boolean } | null {
   const rawErrors = Math.floor(toNonNegative(raw['x']))
   const x = rawErrors > e ? e : rawErrors
 
-  const storedDe = toOptionalCount(raw['de'])
-  const storedDx = toOptionalCount(raw['dx'])
-  // Naqsh `statsV1.ts` dagi `parseStatsV1` bilan AYNI: ikkalasi ham bo'lgandagina
-  // saqlangan juftlik ishlatiladi — yarmi yo'q qator ISHONCHSIZ.
-  let decay: { de: number; dx: number }
-  let seeded = false
-  if (storedDe === undefined || storedDx === undefined) {
-    decay = seedDecayed(e, x)
-    seeded = true
-  } else {
-    decay = { de: storedDe, dx: storedDx > storedDe ? storedDe : storedDx }
-  }
+  // Qoida `parseStatsV1` bilan BITTA manbadan (`resolveDecayPair`): v1 hujjati
+  // va v2 zaxira fayli "ishonchli `de`/`dx` juftligi" ni bir xil tushunishi
+  // SHART, aks holda farq faqat begona fayl importida, jimgina chiqardi.
+  const decay = resolveDecayPair(e, x, toOptionalCount(raw['de']), toOptionalCount(raw['dx']))
 
   const f = toOptionalDay(raw['f'])
   const l = toOptionalDay(raw['l'])
@@ -1594,7 +1657,7 @@ function toWordRow(raw: unknown): { row: WordRow; seeded: boolean } | null {
       ...(f === undefined ? { f: undefined } : { f }),
       ...(l === undefined ? { l: undefined } : { l }),
     } as WordRow,
-    seeded,
+    seeded: decay.seeded,
   }
 }
 
@@ -1772,6 +1835,23 @@ export async function importJson(
     }
     // ⭐ Markersiz keyingi boot v1 ni ustidan quyardi.
     meta.put(now, META_KEY_V1_MIGRATED_AT)
+
+    // ⭐ ARALASH DAVR CHEGARASI IMPORTDA QAYTA HISOBLANADI (`PLAN.md` §11.3,
+    // 10-invariant). `meta.clear()` yuqorida chegarani ham o'chirdi, ya'ni uni
+    // tiklamaslik fayldagi eski, `k`/`nc` si tiklanmagan kunlarni izchil oynaga
+    // qo'shib yuborardi — BLOKER 1 aynan import orqali qaytardi.
+    //
+    // FINGERPRINT: `k` yoki `nc` si YO'Q kun qatori. v2 yozuv yo'li ikkalasini
+    // ham HAR DOIM yozadi, ya'ni bunday qator faqat v1 dan kelib chiqadi —
+    // seansi qisqartirilgan kun. Bittasi topilsa o'sha faylda QISMAN qoplangan
+    // kunlar ham bo'lishi mumkin, ular esa qatorning ICHIDA ko'rinmaydi.
+    //
+    // Chegara BUGUNGI kun: fayldagi kunlarning eng kattasi emas. Sabab —
+    // importdan keyin yoziladigan kunlar butunlay v2 yo'lidan o'tadi, oradagi
+    // (fayl kunidan bugungacha) kunlar esa fayldan kelgan bo'lishi mumkin.
+    if (payload.days.some((row) => row.k === undefined || row.nc === undefined)) {
+      meta.put(dayNumber(now), META_KEY_MIXED_ERA_DAY)
+    }
   }
 }
 
