@@ -13,7 +13,14 @@ import { EmptyState } from '../components/EmptyState.tsx'
 import { StatsBanner } from '../components/StatsBanner.tsx'
 import { dayNumberToKey } from '../core/wordScore.ts'
 import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
-import { deleteLesson, getLesson, listLessons, saveLesson, setProgress } from '../store/lessons.ts'
+import {
+  deleteLesson,
+  exportLessonJson,
+  getLesson,
+  listLessons,
+  saveLesson,
+  setProgress,
+} from '../store/lessons.ts'
 import type { Lesson } from '../store/lessons.ts'
 import { initStats, streakDays, totals } from '../store/stats.ts'
 import type { StatsAvailability, Totals } from '../store/stats.ts'
@@ -113,7 +120,15 @@ function rateLabel(rate: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Gaplarni `.txt` ga eksport qilish (PLAN §10)
+// Darsni faylga chiqarish (PLAN §10)
+//
+// IKKI XIL eksport bor va ular BOSHQA-BOSHQA ish qiladi — shuning uchun ikkita
+// tugma ham:
+//
+//   `.txt`  — faqat gaplar matni, tashqi TTS quvuri uchun. Progress tushmaydi.
+//   `.json` — darsning BUTUN holati (progress, tashlangan gaplar, ta'kidlash,
+//             ovoz va tezlik), ya'ni ZAXIRA: dars o'chirilgan bo'lsa ham Import
+//             ekranidan aynan o'sha joyidan qaytariladi.
 // ---------------------------------------------------------------------------
 
 /** Sarlavhadan xavfsiz fayl nomi. Bo'sh qolsa dars `id` si ishlatiladi. */
@@ -137,19 +152,40 @@ function safeFileName(lesson: Lesson): string {
  * quvurda qoladi va unga matnni olib o'tish yo'li ochiq bo'lishi kerak.
  */
 function downloadSentences(lesson: Lesson): void {
-  const blob = new Blob([`${lesson.sentences.join('\n')}\n`], {
-    type: 'text/plain;charset=utf-8',
-  })
+  downloadFile(
+    `${lesson.sentences.join('\n')}\n`,
+    `${safeFileName(lesson)}.txt`,
+    'text/plain;charset=utf-8',
+  )
+}
+
+/** Ekrandagi YAGONA yuklash yo'li — `Stats.tsx` dagi `downloadText` bilan bir xil. */
+function downloadFile(text: string, filename: string, mime: string): void {
+  const blob = new Blob([text], { type: mime })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `${safeFileName(lesson)}.txt`
+  anchor.download = filename
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
   // Bekor qilish keyingi tsiklga qoldiriladi: darhol chaqirilsa ayrim brauzerlar
   // yuklashni boshlashga ulgurmay, fayl bo'sh tushadi.
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
+/**
+ * Zaxira fayli nomiga qo'shiladigan sana (`YYYY-MM-DD` — `Stats.tsx` dagi
+ * zaxira nomlari bilan bir xil shakl).
+ *
+ * `.txt` da bunday belgi YO'Q va bu farq ATAYIN: `.txt` ning ichi dars matni
+ * o'zgarmaguncha o'zgarmaydi, `.json` esa har mashqdan keyin BOSHQA bo'ladi —
+ * ichida progress bor. Sanasiz ikki haftalik zaxira brauzerda «dars.json» va
+ * «dars (1).json» bo'lib yotardi va qaysi biri yangiroq ekanini fayl nomidan
+ * bilib bo'lmasdi.
+ */
+function stamp(now: Date): string {
+  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`
 }
 
 // ---------------------------------------------------------------------------
@@ -290,6 +326,7 @@ type LessonCardProps = {
   lesson: Lesson
   confirming: boolean
   onRestart: () => void
+  onBackup: () => void
   onAskDelete: () => void
   onCancelDelete: () => void
   onConfirmDelete: () => void
@@ -300,6 +337,7 @@ function LessonCard({
   lesson,
   confirming,
   onRestart,
+  onBackup,
   onAskDelete,
   onCancelDelete,
   onConfirmDelete,
@@ -443,6 +481,9 @@ function LessonCard({
         <Button variant="ghost" size="sm" onClick={onRestart} disabled={done === 0}>
           Boshidan
         </Button>
+        {/* Ikki eksport YONMA-YON turadi va yorliqlari ataylab bir xil shaklda
+            (`.kengaytma eksport`): ular bir oilaga tegishli, farqi esa faqat
+            fayl turida — `title` izohlari buni ochib beradi. */}
         <Button
           variant="ghost"
           size="sm"
@@ -451,6 +492,14 @@ function LessonCard({
           title="Gaplarni tashqi tts.sh quvuri uchun .txt fayl qilib yuklab olish"
         >
           .txt eksport
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onBackup}
+          title={`Zaxira: matn va hozirgi holat (${done} / ${total} gap) bilan .json fayl. Import ekranidan qaytariladi.`}
+        >
+          .json eksport
         </Button>
         <Button
           variant="ghost"
@@ -547,7 +596,10 @@ function LessonCard({
             className="font-mono text-[13px] leading-relaxed text-[#ff9f9f]"
           >
             &laquo;{title}&raquo; o&apos;chirilsinmi? Matn ham, davom ettirish nuqtasi ham
-            yo&apos;qoladi va qaytarib bo&apos;lmaydi — nusxa faqat shu brauzerda saqlanadi.
+            yo&apos;qoladi — nusxa faqat shu brauzerda saqlanadi. Qaytarishning yagona
+            yo&apos;li — OLDINDAN olingan zaxira fayli (shu kartadagi &laquo;.json
+            eksport&raquo; yoki Statistikadagi darslar zaxirasi): uni Import ekranidan
+            tiklaganda dars shu holatida qaytadi.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button variant="danger" size="sm" onClick={onConfirmDelete}>
@@ -676,6 +728,37 @@ export function Home() {
     setLessons(listLessons())
     setNotice(`«${restartUndo.title}» boshidan boshlash bekor qilindi.`)
     setRestartUndo(null)
+  }
+
+  /**
+   * Darsning zaxirasini `.json` fayl qilib beradi.
+   *
+   * ⚠️ Ombordan QAYTA o'qiladi (`exportLessonJson` ichida `getLesson`), ro'yxatdagi
+   * `lesson` dan yozilmaydi: `handleAudio` dagi bilan bir xil sabab — bu ro'yxat
+   * mashq boshlanganidan beri eskirgan bo'lishi mumkin va zaxira o'sha eski
+   * progressni "hozirgi holat" deb saqlab qo'yardi.
+   *
+   * Shu sababdan dars TOPILMASLIGI ham mumkin (boshqa tabda o'chirilgan) — bunda
+   * bo'sh fayl bermaymiz: "zaxira oldim" degan yolg'on ishonch keyin qimmatga
+   * tushadi. Xabar `notice` orqali beriladi, chunki ekranda boshqa yo'l yo'q.
+   */
+  function handleBackup(id: string): void {
+    const current = getLesson(id)
+    const text = current === null ? null : exportLessonJson(id)
+    if (current === null || text === null) {
+      setLessons(listLessons())
+      setNotice("Dars topilmadi — zaxira olinmadi. Ro'yxat yangilandi.")
+      return
+    }
+
+    downloadFile(
+      text,
+      `${safeFileName(current)}-${stamp(new Date())}.json`,
+      'application/json;charset=utf-8',
+    )
+    setNotice(
+      `«${current.title === '' ? 'Nomsiz dars' : current.title}» zaxirasi .json fayl bo'lib yuklab olindi.`,
+    )
   }
 
   function handleDelete(id: string): void {
@@ -910,6 +993,7 @@ export function Home() {
                   lesson={lesson}
                   confirming={confirmId === lesson.id}
                   onRestart={() => handleRestart(lesson.id)}
+                  onBackup={() => handleBackup(lesson.id)}
                   onAskDelete={() => setConfirmId(lesson.id)}
                   onCancelDelete={() => setConfirmId(null)}
                   onConfirmDelete={() => handleDelete(lesson.id)}
@@ -923,10 +1007,25 @@ export function Home() {
                 `pt-4`) o'z bo'limiga ankerlangan. Ilgari bu xatboshi bo'lim
                 tugagach erkin osilib qolardi va tasodifiy qoldiq matnga
                 o'xshab ko'rinardi. */}
-            <p className="mt-6 border-t border-white/[0.06] pt-4 font-mono text-[11px] leading-relaxed text-muted">
-              Davom ettirish gap darajasida ishlaydi: yarim yozilgan gap saqlanmaydi, mashq doim
-              gap boshidan tiklanadi.
-            </p>
+            <div className="mt-6 space-y-2 border-t border-white/[0.06] pt-4">
+              <p className="font-mono text-[11px] leading-relaxed text-muted">
+                Davom ettirish gap darajasida ishlaydi: yarim yozilgan gap saqlanmaydi, mashq doim
+                gap boshidan tiklanadi.
+              </p>
+              {/* Tiklash yo'li KARTADA emas, shu yerda aytiladi: u kerak bo'lganda
+                  (dars o'chirilgandan keyin) karta allaqachon yo'q bo'ladi. */}
+              <p className="font-mono text-[11px] leading-relaxed text-muted">
+                &laquo;.json eksport&raquo; darsni hozirgi holati bilan saqlaydi —{' '}
+                <Link
+                  to="/import"
+                  className="text-[#5ee6c1] underline decoration-[#5ee6c1]/30 underline-offset-4 transition-colors hover:decoration-[#5ee6c1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ee6c1]"
+                >
+                  Import
+                </Link>{' '}
+                ekranidagi &laquo;zaxiradan tiklash&raquo; uni o&apos;chirib yuborilgandan
+                keyin ham o&apos;sha joyidan qaytaradi.
+              </p>
+            </div>
           </>
         )}
       </section>

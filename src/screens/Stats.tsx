@@ -23,6 +23,7 @@ import { SHRINKAGE_M, dayNumber, dayNumberToKey } from '../core/wordScore.ts'
 import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
 import {
   corruptLessonsBackup,
+  describeLessonsImport,
   discardCorruptLessonsBackup,
   discardUnknownLessons,
   exportLessonsJson,
@@ -336,23 +337,6 @@ function downloadLessons(): void {
     `dnt-lessons-${stamp(new Date())}.json`,
     'application/json;charset=utf-8',
   )
-}
-
-/**
- * Darslar importining natijasi — SONLAR bilan.
- *
- * "Tiklandi" degan quruq xabar bu yerda yetarli emas: import birlashtiradi,
- * ya'ni fayl allaqachon mavjud darslarni takrorlashi mumkin. Nechtasi yangi,
- * nechtasi ustiga yozilgani — foydalanuvchining to'g'ri faylni tanlaganini
- * tekshiradigan yagona belgisi.
- *
- * Ikkovi bir vaqtda nol bo'lolmaydi: bunday holat importdan XATO qaytaradi.
- */
-function describeLessonsImport(added: number, updated: number): string {
-  const parts: string[] = []
-  if (added > 0) parts.push(`${added} ta dars qo'shildi`)
-  if (updated > 0) parts.push(added > 0 ? `${updated} tasi yangilandi` : `${updated} ta dars yangilandi`)
-  return `${parts.join(', ')}.`
 }
 
 // ---------------------------------------------------------------------------
@@ -1406,13 +1390,16 @@ export function Stats() {
                 JSON import
               </Button>
             </div>
-            {/* Dars kartasidagi `.txt` eksport BOSHQA ish qiladi va ikkovini
-                chalkashtirish oson: u tashqi `tts.sh` quvuriga matn beradi,
-                progress va ta'kidlashni esa tashlab yuboradi. */}
+            {/* Dars kartasida IKKITA eksport bor va ulardan biri BOSHQA ish
+                qiladi: `.txt` tashqi `tts.sh` quvuriga matn beradi, progress va
+                ta'kidlashni esa tashlab yuboradi. `.json` esa aynan shu yerdagi
+                fayl bilan bir xil, faqat bitta darsniki. */}
             <p className={`${NOTE} mt-2`}>
-              Bu fayl darsning butun holatini saqlaydi: matn, progress, tashlangan gaplar,
-              ta&apos;kidlash, ovoz va tezlik. Dars kartasidagi &laquo;.txt eksport&raquo; esa
-              faqat gaplar matnini beradi — u tashqi quvur uchun, zaxira uchun emas.
+              Bu fayl HAMMA darsning butun holatini saqlaydi: matn, progress, tashlangan
+              gaplar, ta&apos;kidlash, ovoz va tezlik. Bitta dars kerak bo&apos;lsa —
+              kartadagi &laquo;.json eksport&raquo;; u ham shu yerdan va Import
+              ekranidan tiklanadi. Kartadagi &laquo;.txt eksport&raquo; esa faqat gaplar
+              matnini beradi — u tashqi quvur uchun, zaxira uchun emas.
             </p>
           </div>
         </div>

@@ -10,8 +10,10 @@ import {
   completeSentence,
   corruptLessonsBackup,
   deleteLesson,
+  describeLessonsImport,
   discardCorruptLessonsBackup,
   discardUnknownLessons,
+  exportLessonJson,
   exportLessonsJson,
   getLesson,
   importLessonsJson,
@@ -1170,5 +1172,94 @@ describe('importLessonsJson — rad etish', () => {
     const result = importLessonsJson(JSON.stringify([makeLesson()]))
 
     expect(result.ok).toBe(false)
+  })
+})
+
+describe('exportLessonJson — bitta dars', () => {
+  it('faqat SO\'RALGAN darsni oladi', () => {
+    saveLesson(makeLesson({ id: 'l-1' }))
+    saveLesson(makeLesson({ id: 'l-2', title: 'Ikkinchi' }))
+
+    const file = JSON.parse(exportLessonJson('l-2') ?? '') as { lessons: Lesson[] }
+
+    expect(file.lessons).toHaveLength(1)
+    expect(file.lessons[0]?.id).toBe('l-2')
+  })
+
+  it("envelope `exportLessonsJson` nikiga AYNAN mos — import ikkovini ham o'qiydi", () => {
+    saveLesson(makeLesson())
+
+    const parsed: unknown = JSON.parse(exportLessonJson('l-1') ?? '')
+
+    expect(parsed).toMatchObject({ version: 1, kind: 'lessons' })
+  })
+
+  it("progress va tashlangan gaplar bilan birga tushadi", () => {
+    saveLesson(makeLesson({ progress: 1, skipped: [0], emphasis: [[{ start: 4, end: 7 }], []] }))
+
+    const file = JSON.parse(exportLessonJson('l-1') ?? '') as { lessons: Lesson[] }
+    const lesson = file.lessons[0]
+
+    expect(lesson?.progress).toBe(1)
+    expect(lesson?.skipped).toEqual([0])
+    expect(lesson?.emphasis).toEqual([[{ start: 4, end: 7 }], []])
+  })
+
+  it("dars topilmasa `null` — bo'sh fayl EMAS", () => {
+    saveLesson(makeLesson())
+
+    // Bo'sh envelope qaytarish "zaxira oldim" degan yolg'on ishonch berardi va
+    // u aynan dars o'chirilganda, ya'ni fayl eng kerak paytda bilinardi.
+    expect(exportLessonJson('yo-q')).toBeNull()
+  })
+
+  it("o'chirilgan dars faylidan AYNAN o'sha joyidan tiklanadi", () => {
+    saveLesson(makeLesson({ progress: 1, skipped: [0] }))
+    const backup = exportLessonJson('l-1')
+    const before = listLessons()
+
+    deleteLesson('l-1')
+    expect(listLessons()).toEqual([])
+
+    const result = importLessonsJson(backup ?? '')
+
+    expect(result).toEqual({ ok: true, added: 1, updated: 0 })
+    expect(listLessons()).toEqual(before)
+  })
+
+  it("bitta darsni tiklash QOLGAN darslarga tegmaydi", () => {
+    saveLesson(makeLesson({ id: 'l-1' }))
+    const backup = exportLessonJson('l-1')
+
+    deleteLesson('l-1')
+    saveLesson(makeLesson({ id: 'l-2', title: 'Keyin qo\'shilgan' }))
+
+    importLessonsJson(backup ?? '')
+
+    // Almashtirish bo'lganda `l-2` yo'qolardi — `importLessonsJson` dagi
+    // "birlashtirish" qarorining aynan shu tomoni.
+    expect(listLessons().map((lesson) => lesson.id).sort()).toEqual(['l-1', 'l-2'])
+  })
+
+  it("`localStorage` yo'q bo'lsa `null` qaytaradi, yiqilmaydi", () => {
+    vi.stubGlobal('localStorage', undefined)
+
+    expect(exportLessonJson('l-1')).toBeNull()
+  })
+})
+
+describe('describeLessonsImport', () => {
+  it("faqat qo'shilgan darslarni sanaydi", () => {
+    expect(describeLessonsImport(2, 0)).toBe('2 ta dars qo\'shildi.')
+  })
+
+  it("faqat yangilanganda TO'LIQ jumla tuzadi", () => {
+    // "2 tasi yangilandi" yolg'iz turganda nimadan "2 tasi" ekani noma'lum
+    // bo'lardi — shuning uchun bu shoxda boshqa matn.
+    expect(describeLessonsImport(0, 2)).toBe('2 ta dars yangilandi.')
+  })
+
+  it('ikkovini bitta jumlaga qo\'shadi', () => {
+    expect(describeLessonsImport(1, 3)).toBe('1 ta dars qo\'shildi, 3 tasi yangilandi.')
   })
 })

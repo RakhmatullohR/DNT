@@ -8,7 +8,8 @@
 //   3. Mashq dastlabki 3 gap tayyor bo'lishi bilan ochiladi (PLAN §2c), qolgani fonda.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import type { ChangeEvent } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 
 import { DEFAULT_RATE, DEFAULT_VOICE, RATES, VOICES } from '../../shared/filename.ts'
 import { requestBatch, serverAvailable } from '../audio/ttsClient.ts'
@@ -21,7 +22,13 @@ import type { NormalizeResult } from '../core/normalize.ts'
 import { splitSentences } from '../core/splitSentences.ts'
 import { tokenize } from '../core/tokenize.ts'
 import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
-import { listLessons, newLessonId, saveLesson } from '../store/lessons.ts'
+import {
+  describeLessonsImport,
+  importLessonsJson,
+  listLessons,
+  newLessonId,
+  saveLesson,
+} from '../store/lessons.ts'
 import type { Lesson } from '../store/lessons.ts'
 
 const PANEL = 'rounded-panel border border-white/[0.07] bg-[#0e141c]'
@@ -37,6 +44,23 @@ const FIELD = [
   // auditi). Offset rangi shu FIELD chizilgan panelning foni — Import dagi
   // barcha FIELD "#0e141c" panel ustida turadi (Home dagi sub-panel emas).
   'focus-visible:ring-offset-2 focus-visible:ring-offset-[#0e141c]',
+].join(' ')
+
+/**
+ * Havola tugma ko'rinishida: `Button` — bu <button>, uni <a> ichiga solib
+ * bo'lmaydi, shuning uchun navigatsiya uchun `Link` o'z sinflarini oladi
+ * (`Home.tsx` dagi bilan bir xil qaror). Ko'rinish `Button.tsx` dagi
+ * `ghost` + `md` bilan bir xil; halqa orasi rangi esa shu havola chiziladigan
+ * panelning foni — u tiklash javobi ichida, `#0b0f14` ustida turadi.
+ */
+const LINK_GHOST = [
+  'inline-flex h-10 items-center justify-center gap-2 rounded-control border px-4',
+  'font-mono text-[13px] font-medium whitespace-nowrap',
+  'border-[#22303d] bg-transparent text-[#c6d3de]',
+  'transition-colors duration-150 ease-out',
+  'hover:border-[#334556] hover:bg-[#131b23] hover:text-[#e6edf3]',
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5ee6c1]',
+  'focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f14]',
 ].join(' ')
 
 /** PLAN §2c: paste hajmi shu songa cheklanadi. */
@@ -173,6 +197,15 @@ type Phase =
 
 type SentenceRow = { index: number; text: string; words: number }
 
+/**
+ * Zaxiradan tiklashning natijasi. `null` — hali hech narsa tanlanmagan.
+ *
+ * Xato va muvaffaqiyat BIR XIL joyda ko'rsatiladi, lekin turlicha bo'yaladi:
+ * fayl tanlash oynasi yopilgandan keyin ekranda boshqa hech qanday belgi
+ * qolmaydi, ya'ni bu yagona javob.
+ */
+type RestoreResult = { kind: 'ok'; text: string } | { kind: 'error'; text: string }
+
 // ---------------------------------------------------------------------------
 // Ekran
 // ---------------------------------------------------------------------------
@@ -211,6 +244,10 @@ export function Import() {
 
   /** Darslar ro'yxati ochilishda va har bir yangi import boshlanishida qayta o'qiladi. */
   const [existingTitles, setExistingTitles] = useState<Set<string>>(() => readTitles())
+
+  /** Zaxiradan tiklash: oxirgi javob va fayl tanlash oynasini ochadigan input. */
+  const [restore, setRestore] = useState<RestoreResult | null>(null)
+  const restoreRef = useRef<HTMLInputElement>(null)
 
   /**
    * Ikki marta yuborishdan qo'riqlash. `phase` yetarli emas: `setPhase` navbatga
@@ -306,6 +343,50 @@ export function Import() {
     // qoladi (`splice` faqat SHU o'rindan boshlab qo'shadi) — shuning uchun
     // fokus xuddi shu `id`ga qaytariladi, `<li>` qayta ulangan bo'lsa ham.
     setPendingFocusId(editToggleId(index))
+  }
+
+  /**
+   * Zaxira faylidan darslarni tiklaydi.
+   *
+   * Bu yo'l yuqoridagi matn maydonidan BUTUNLAY mustaqil: `raw`, `analysis` va
+   * `phase` ga tegilmaydi. Sabab — bu yerda hech narsa qaytadan tahlil
+   * qilinmaydi va sintez ham boshlanmaydi: faylda tayyor dars turadi, gaplarga
+   * bo'lish va ta'kidlash allaqachon o'sha darsning ichida. Ya'ni "import"
+   * so'zining ikkinchi ma'nosi, birinchisining bosqichlari emas.
+   *
+   * `existingTitles` esa YANGILANADI: tiklangan dars ham takroriy nom
+   * tekshiruviga qo'shilishi kerak, aks holda o'sha nomdagi matnni ustiga
+   * import qilayotgan foydalanuvchi ogohlantirishni ko'rmasdi.
+   */
+  async function applyRestore(file: File): Promise<void> {
+    let text = ''
+    try {
+      text = await file.text()
+    } catch {
+      setRestore({ kind: 'error', text: "Faylni o'qib bo'lmadi." })
+      return
+    }
+
+    const result = importLessonsJson(text)
+    if (!result.ok) {
+      setRestore({ kind: 'error', text: result.error })
+      return
+    }
+    setExistingTitles(readTitles())
+    setRestore({ kind: 'ok', text: describeLessonsImport(result.added, result.updated) })
+  }
+
+  function handleRestoreFile(event: ChangeEvent<HTMLInputElement>): void {
+    const input = event.currentTarget
+    const file = input.files?.[0]
+    // Qiymat darhol tozalanadi: aks holda AYNAN o'sha faylni ikkinchi marta
+    // tanlaganda `change` hodisasi umuman chiqmaydi va tugma "o'lik" ko'rinadi.
+    // (`Stats.tsx` dagi `handleFile` bilan bir xil qoida.)
+    input.value = ''
+    if (file === undefined) return
+    // Fayl SINXRON o'qib olinadi (`currentTarget` hodisa tugashi bilan
+    // tozalanadi), qolgani asinxron davom etadi.
+    void applyRestore(file)
   }
 
   async function handleImport(): Promise<void> {
@@ -734,6 +815,80 @@ export function Import() {
           ) : null}
         </section>
       )}
+
+      {/* --- Zaxiradan tiklash (PLAN §10) ---
+          Yuqoridagi import XOM MATNDAN yangi dars yasaydi, bu esa TAYYOR darsni
+          fayldan qaytaradi: matn, progress, tashlangan gaplar, ta'kidlash, ovoz
+          va tezlik bilan. Ikkovi bitta ekranda turadi, chunki foydalanuvchi
+          uchun savol bitta — "darsni qanday qo'shaman?"; ajratilgani esa ochiq
+          aytiladi, aks holda ular bir-birining muqobili bo'lib ko'rinardi.
+
+          `synth` paytida KO'RSATILMAYDI: o'sha lahzada dars saqlanib, sahifa
+          mashqqa o'tay deb turadi va omborga ikkinchi yozuv yo'lini ochish
+          faqat chalkashtirardi. */}
+      {phase.kind !== 'synth' ? (
+        <section className={`${PANEL} mt-4 p-5 sm:p-6`}>
+          <h2 className={LABEL}>zaxiradan tiklash</h2>
+          <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-[#7d8b9c]">
+            Darslar ro&apos;yxatidagi &laquo;.json eksport&raquo; bilan olingan faylni shu
+            yerdan qaytaring — o&apos;chirib yuborilgan dars ham, boshqa brauzerdagi dars
+            ham shu yo&apos;l bilan qo&apos;shiladi. Statistika ekranidagi to&apos;liq
+            darslar zaxirasi ham shu yerga tushadi.
+          </p>
+          <p className="mt-2 max-w-2xl font-mono text-[11px] leading-relaxed text-[#7d8b9c]">
+            Mavjud darslar saqlanib qoladi: fayldagi yangi darslar qo&apos;shiladi, allaqachon
+            bor darsning mazmuni esa fayldagisi bilan yangilanadi. Progress orqaga surilmaydi
+            — shu brauzerdagi dars uzoqroq o&apos;qilgan bo&apos;lsa, o&apos;sha holat qoladi.
+          </p>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setRestore(null)
+                restoreRef.current?.click()
+              }}
+            >
+              Zaxira faylini tanlash
+            </Button>
+            <input
+              ref={restoreRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={handleRestoreFile}
+            />
+          </div>
+
+          {/* `aria-live`: javob fayl tanlash oynasi yopilgandan keyin keladi,
+              ya'ni fokus shu paytda tugmada turadi va ekran o'quvchi matnni
+              o'zi topmasdi. */}
+          <div role="status" aria-live="polite">
+            {restore !== null ? (
+              <div
+                className={`mt-3 rounded-control border p-4 ${
+                  restore.kind === 'ok'
+                    ? 'border-[#22303d] bg-[#0b0f14]'
+                    : 'border-[#452027] bg-[#160f12]'
+                }`}
+              >
+                <p
+                  className={`font-mono text-[13px] leading-relaxed ${
+                    restore.kind === 'ok' ? 'text-[#c6d3de]' : 'text-[#ff9f9f]'
+                  }`}
+                >
+                  {restore.text}
+                </p>
+                {restore.kind === 'ok' ? (
+                  <Link to="/" className={`${LINK_GHOST} mt-3`}>
+                    Darslar ro&apos;yxatiga o&apos;tish
+                  </Link>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       {phase.kind === 'synth' ? (
         <section className={`${PANEL} mt-4 p-5`}>

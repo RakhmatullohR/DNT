@@ -555,6 +555,27 @@ export function exportLessonsJson(): string {
 }
 
 /**
+ * BITTA darsning zaxirasi. Dars topilmasa `null` — chaqiruvchi buni bo'sh
+ * fayldan (ya'ni "zaxira oldim" degan yolg'on xabardan) ajrata olishi kerak.
+ *
+ * ⭐ Envelope `exportLessonsJson` niki bilan AYNAN bir xil, faqat `lessons`
+ * uzunligi bitta. Bu SHART, tasodif emas: shu tufayli yakka dars faylini ham,
+ * to'liq zaxirani ham `importLessonsJson` ning O'ZI qabul qiladi va ikkinchi
+ * "faqat bitta dars uchun" o'qish yo'li umuman kerak bo'lmaydi. Ikki yo'l
+ * bo'lganda ular vaqt o'tib bir-biridan ajralib ketardi.
+ *
+ * Fayl ichida progress ham, `skipped` ham bor — dars kartasidagi `.txt`
+ * eksportdan farqi shu: u faqat gaplar matnini beradi, ya'ni undan dars
+ * o'chirilgan joyidan tiklanmaydi.
+ */
+export function exportLessonJson(id: string): string | null {
+  const lesson = getLesson(id)
+  if (lesson === null) return null
+  const file: LessonsFile = { version: 1, kind: 'lessons', lessons: [lesson] }
+  return JSON.stringify(file, null, 2)
+}
+
+/**
  * Fayl ildizidan dars yozuvlari massivini ajratadi.
  *
  * Sarlavhasiz MASSIV ham qabul qilinadi va bu ataylab: ombor formatining O'ZI
@@ -610,6 +631,29 @@ function mergeLesson(stored: Lesson, incoming: Lesson): Lesson {
 export type LessonsImportResult =
   | { ok: true; added: number; updated: number }
   | { ok: false; error: string }
+
+/**
+ * Muvaffaqiyatli importning SONLAR bilan aytilgan natijasi.
+ *
+ * "Tiklandi" degan quruq xabar yetarli emas: import birlashtiradi, ya'ni fayl
+ * allaqachon mavjud darslarni takrorlashi mumkin. Nechtasi yangi, nechtasi
+ * ustiga yozilgani — foydalanuvchining to'g'ri faylni tanlaganini tekshiradigan
+ * yagona belgisi.
+ *
+ * Xato matnlari (`importLessonsJson`) bilan bir joyda turadi va shu sababdan
+ * ekran ichida emas, shu modulda: uni ikki ekran — Import va Statistika — bir
+ * xil o'qiydi, ikki nusxa esa vaqt o'tib bir-biridan ajralib ketardi.
+ *
+ * Ikkovi bir vaqtda nol bo'lolmaydi: bunday holat importdan XATO qaytaradi.
+ */
+export function describeLessonsImport(added: number, updated: number): string {
+  const parts: string[] = []
+  if (added > 0) parts.push(`${added} ta dars qo'shildi`)
+  if (updated > 0) {
+    parts.push(added > 0 ? `${updated} tasi yangilandi` : `${updated} ta dars yangilandi`)
+  }
+  return `${parts.join(', ')}.`
+}
 
 /**
  * Zaxiradan tiklaydi. Statistikadan FARQLI o'laroq bu BIRLASHTIRISH, almashtirish
