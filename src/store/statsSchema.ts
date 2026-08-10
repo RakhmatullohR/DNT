@@ -60,7 +60,7 @@ export const META_KEY_DECAY_ANCHOR_DAY = 'decayAnchorDay'
 /**
  * ⭐ ARALASH DAVR CHEGARASI — shu KUN RAQAMIGACHA (o'zi ham kiradi) kun
  * qatorlari ikkita HAR XIL o'lchov davridan yig'ilgan bo'lishi mumkin
- * (`PLAN.md` §11.3, 10-invariant: "nisbatlar IZCHIL oynadan").
+ * (`PLAN.md` §11.3, 9-invariant: "nisbatlar IZCHIL oynadan").
  *
  * NEGA KERAK. Migratsiya kun qatorining baza uchtasini (`correctKeystrokes`,
  * `activeMs`, `sentences`) v1 `days` dan TO'LIQ oladi, `k`/`nc` ni esa faqat

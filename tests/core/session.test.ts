@@ -314,7 +314,7 @@ describe("bitta gapning so'z hissasi (§8.1)", () => {
     // Ombor darajasidagi qisqich sinovdan o'tmasdi: u TARTIBGA BOG'LIQ bo'lib
     // qolardi va ayni mashq tarixi seanslar tartibiga qarab 17% yoki 50%
     // berardi, buzilish esa qaytarib bo'lmaydigan UMRBOD hisoblagichda sodir
-    // bo'lardi (`PLAN.md` §11.3, 9-invariant).
+    // bo'lardi (`PLAN.md` §11.3, 10-invariant).
     const delta = wordDeltaOf(tokenize('rhythm'), new Map([[0, 5]]))
     expect(delta.get('rhythm')).toEqual({ exposures: 1, errors: 1 })
   })

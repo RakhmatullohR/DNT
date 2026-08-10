@@ -189,7 +189,7 @@ type WordToken = { kind: 'word' | 'gap'; text: string }
  *   - Ombor darajasida qisqartirish (`errors > exposures ? exposures : errors`)
  *     TARTIBGA BOG'LIQ bo'lib qoladi: ayni mashq tarixi seanslar tartibiga
  *     qarab 17% yoki 50% beradi, va buzilish qaytarib bo'lmaydigan UMRBOD
- *     hisoblagichda sodir bo'ladi (`PLAN.md` §11.3, 9-invariant).
+ *     hisoblagichda sodir bo'ladi (`PLAN.md` §11.3, 10-invariant).
  *   - Xato OG'IRLIGI (nechta harf) baribir saqlanmasdi — ombor qisqichi uni
  *     allaqachon yo'q qilardi: `{e:1,x:1}×10` va `{e:1,x:5}×10` bir xil qatorga
  *     tushardi.

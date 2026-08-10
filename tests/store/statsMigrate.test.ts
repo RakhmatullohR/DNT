@@ -22,6 +22,7 @@ import { closeDb, deleteDb, openDb, runTx } from '../../src/store/statsDb.ts'
 import {
   META_KEY_DECAY_ANCHOR_DAY,
   META_KEY_LIFETIME,
+  META_KEY_MIXED_ERA_DAY,
   STORE_DAYS,
   STORE_META,
   STORE_SESSIONS,
@@ -899,6 +900,58 @@ describe("so'nish langari — `decayAnchorDay`", () => {
 })
 
 // ---------------------------------------------------------------------------
+// ⭐ ARALASH DAVR CHEGARASI — `mixedEraDay` (`PLAN.md` §11.3, 9-invariant)
+// ---------------------------------------------------------------------------
+//
+// ⚠️ NEGA MIGRATSIYA QATLAMIDA HAM. Chegarani IKKI yozuvchi qo'yadi:
+// `writePlan` (migratsiya yo'li — v1 tarixi bor HAR BIR foydalanuvchi) va
+// `importJson` (zaxira tiklash). `stats.test.ts` faqat IKKINCHISINI qamragan
+// edi, ya'ni `writePlan` dagi qator butunlay o'chirilsa ham hech qanday test
+// yiqilmasdi — mutatsiya zondi bilan o'lchandi (838/838 JIMGINA o'tdi). O'sha
+// qator esa aynan shu ishning markaziy tuzatishi: usiz `totals()` nisbatlarni
+// v1 `days` (baza uchtasi TO'LIQ) va omon qolgan seanslardan kelgan `k`/`nc`
+// (QISMAN) ni aralashtirib hisoblab, migratsiyagacha tarixi bor har bir
+// foydalanuvchida «100.0%» aniqlik ko'rsatardi.
+describe('⭐ aralash davr chegarasi — `writePlan` yo\'li', () => {
+  it("v1 KUN qatorlari ko'chirilsa chegara YOZILADI (migratsiya kuni)", async () => {
+    seedAll()
+
+    await migrateV1ToV2()
+
+    const db = await open()
+    // Qiymat KUN RAQAMI, ms EMAS: `totals()` uni kun kalitiga aylantiradi.
+    expect(await readRow<number>(db, STORE_META, META_KEY_MIXED_ERA_DAY)).toBe(
+      dayNumber(Date.now()),
+    )
+  })
+
+  it("⭐ BO'SH v1 omborida chegara YOZILMAYDI — marker esa baribir yoziladi", async () => {
+    await migrateV1ToV2()
+
+    const db = await open()
+    // Ajratishning butun mag'zi: marker "TEKSHIRILDI" degani va u bo'sh v1
+    // uchun ham yoziladi. Uni chegara sifatida ishlatish HAR BIR YANGI
+    // foydalanuvchining o'rnatilgan kunini oynadan chiqarib tashlardi
+    // (`netWpm`/`accuracy` = `null` + "ertadan beri" degan yolg'on belgi).
+    expect(await readRow<number>(db, STORE_META, META_KEY_V1_MIGRATED_AT)).toBeTypeOf('number')
+    expect(await readRow<number>(db, STORE_META, META_KEY_MIXED_ERA_DAY)).toBeUndefined()
+  })
+
+  it("faqat SO'ZLARDAN iborat v1 (kun qatori yo'q) ham chegara qo'ymaydi", async () => {
+    // Aralashuvni KUN qatorlari keltiradi: aynan ular baza uchtasini `k`/`nc`
+    // siz olib keladi. So'z qatorlari nisbatga umuman kirmaydi, ya'ni ular
+    // uchun oynani toraytirish asossiz bo'lardi.
+    seedV1({ version: 1, sessions: [], words: { the: { exposures: 5, errors: 1 } }, days: {} })
+
+    const result = await migrateV1ToV2()
+
+    expect(result).toEqual({ ok: true, migrated: true, words: 1, days: 0, sessions: 0 })
+    const db = await open()
+    expect(await readRow<number>(db, STORE_META, META_KEY_MIXED_ERA_DAY)).toBeUndefined()
+  })
+})
+
+// ---------------------------------------------------------------------------
 // ⚠️ MIGRATSIYA OYNASIDAGI POYGA (ko'rikning "JIDDIY 2" topilmasi)
 // ---------------------------------------------------------------------------
 //
@@ -1184,6 +1237,13 @@ describe('mergeWordRows — seriya va notanish maydonlar qoidasi', () => {
     // Aralashgan tarixda seriya faqat UZILISHI mumkin, uzayishi emas.
     expect(mergeWordRows(row({ s: 3, l: 7 }), row({ s: 8, l: 7 })).s).toBe(3)
     expect(mergeWordRows(row({ s: 3 }), row({ s: 8 })).s).toBe(3)
+    // ⚠️ ARGUMENTLAR TESKARI TARTIBDA HAM. Yuqoridagi ikki da'voda kichigi
+    // AYNI PAYTDA `a` niki ham edi, ya'ni ular `Math.min` ni oddiy `a.s` dan
+    // AJRATMAYDI — mutatsiya zondi buni tasdiqladi (`Math.min` -> `a.s`
+    // qilinganda 838/838 test JIMGINA o'tdi). Qoidani mixlaydigan yagona
+    // shakl — kichigi `b` tomonda turgan holat.
+    expect(mergeWordRows(row({ s: 8, l: 7 }), row({ s: 3, l: 7 })).s).toBe(3)
+    expect(mergeWordRows(row({ s: 8 }), row({ s: 3 })).s).toBe(3)
     // Bir tomonda sana bor, ikkinchisida yo'q -> SANALISI g'olib.
     expect(mergeWordRows(row({ s: 3, l: 10 }), row({ s: 8 })).s).toBe(3)
     expect(mergeWordRows(row({ s: 3 }), row({ s: 8, l: 10 })).s).toBe(8)

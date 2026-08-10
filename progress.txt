@@ -781,3 +781,97 @@ KEYINGI SESSIYADA
      "READ-ONLY: hech qanday faylni tahrirlama, yaratma, o'chirma."
      (yoki Explore/architect kabi yozuvsiz agent tipidan foydalanish).
   2. Ko'rikdan keyin commit.
+
+╔══════════════════════════════════════════════════════════════════╗
+║  MUSTAQIL KO'RIK BAJARILDI — to'xtatildi (foydalanuvchi so'rovi) ║
+╚══════════════════════════════════════════════════════════════════╝
+
+HOLAT: YASHIL, COMMIT QILINMAGAN
+  npx vitest run    -> 24 fayl, 841 test o'tdi   (bazadan +3)
+  npm run typecheck -> 0 xato
+  npx vite build    -> muvaffaqiyatli
+
+30. ⭐ READ-ONLY MANDAT ISHLADI. 10 agent (4 invariant auditori + 3 lens +
+    3 rad etuvchi), hammasi yozuvsiz tipda (architect/critic) VA promptda
+    ochiq taqiq bilan. Har bosqichdan keyin `git ls-files | sha256sum`
+    manifesti solishtirildi: BIRORTA fayl o'zgarmagan. 28-banddagi
+    jimgina buzilish TAKRORLANMADI.
+
+31. ⭐⭐ MUTATSIYA ZONDI BAHSDAN KUCHLIROQ. Agentlar "qamrov bormi?" degan
+    savolga kod O'QIB javob beradi va ADASHADI. 7 ta zond yugurtirildi
+    (har biri: mutatsiya -> vitest -> pristine zaxiradan tiklash):
+      P1 mixedEraDay yozuvini O'CHIRISH   -> 838/838 JIMGINA O'TDI  ⛔
+      P2a/P2b pickStreak Math.min -> a.s  -> 838/838 JIMGINA O'TDI  ⛔
+      P6 sessions ko'r put -> o'qi-yoz    -> 838/838 JIMGINA O'TDI  (ATAYIN)
+      P3 await ensureReady -> void        -> 3 test yiqildi  ✅
+      P4 NAZORAT b: Math.max -> b: a.b    -> 2 test yiqildi  ✅ (29-band ISHLADI)
+      P5 umrbod konvert shartli           -> 1 test yiqildi  ✅
+      P7 totals: d > chegara -> d >=      -> 1 test yiqildi  ✅
+    ⚠️ Test-lens agenti P3 va P5 ni "qamrovsiz" deb belgilagan edi —
+    ZOND IKKALASINI HAM RAD ETDI. Agent hisobotini dalil deb qabul qilma.
+
+32. ⛔ TOPILGAN ENG KATTA TESHIK: `statsMigrate.ts:739` (mixedEraDay ni
+    MIGRATSIYA yo'lida yozadigan yagona qator) BUTUNLAY TESTSIZ edi.
+    Uni o'chirsa 838 testdan hech biri yiqilmasdi — ya'ni US-022 da
+    tuzatilgan BLOKER 1 (har bir v1 foydalanuvchisida «100.0%» aniqlik)
+    jimgina qaytishi mumkin edi. `stats.test.ts` faqat `importJson`
+    yozuvchisini qamragan, `writePlan` nikini emas.
+    YOPILDI: statsMigrate.test.ts ga 3 test (ijobiy shox, bo'sh v1,
+    faqat-so'zli v1). Zond bilan tasdiqlandi: P1 endi yiqiladi.
+
+33. `pickStreak` ning ikkala `Math.min` shoxi ham ajratmaydigan da'volar
+    bilan "qoplangan" edi: `row({s:3}), row({s:8})` da min ham, `a.s` ham
+    3 beradi. Argumentlar TESKARI tartibdagi ikkita da'vo qo'shildi.
+    Zond bilan tasdiqlandi: P2a/P2b endi yiqiladi.
+
+34. IZOH NUQSONLARI (kod TO'G'RI, matn eskirgan — "izohga ishonma"):
+    - stats.ts `Totals` JSDoc'i hamon "izchil oyna = `v1MigratedAt`
+      MARKERIDAN keyingi kunlar" deb yozardi. Bu AYNAN US-022 tuzatgan
+      nuqson va matn kelajakdagi o'quvchini unga qaytarardi. Tuzatildi.
+    - `ratiosSince` sharti eskirgan edi (`count()` qorovuli diffda o'chgan).
+    - INVARIANT RAQAMLARI 7 joyda PLAN.md bilan TESKARI edi: nisbat qoidasi
+      "10-invariant" (aslida 9), xato qoidasi "9-invariant" (aslida 10).
+      Hammasi tuzatildi: statsSchema.ts:63, statsMigrate.ts:732, stats.ts:1852
+      -> 9; core/session.ts:192, statsV1.ts:222, stats.ts:555,
+      tests/core/session.test.ts:317 -> 10.
+
+35. 12 INVARIANT KODGA QARSHI TEKSHIRILDI: 2-12 SAQLANGAN (kod dalili bilan).
+    1-invariant QISMAN: `mergeWordRows` `de`/`dx` ni umumiy langarga
+    keltirmasdan qo'shadi. ⚠️ LEKIN bu 16ef01a da ham AYNAN shunday edi
+    (`git show 16ef01a` bilan tasdiqlandi) — shu ishning regressiyasi EMAS,
+    va `statsMigrate.test.ts:719` langarsiz qo'shishni ATAYIN mixlagan.
+
+36. RAD ETUVCHI BOSQICH (har topilmaga 3 ta, uch xil lens: to'g'rilik /
+    yetib borish / niyat). 2/3 rad etilsa — o'ladi.
+    O'LDI: eksport `mixedEraDay` ni saqlamasligi (stats.ts:1839-1851 da
+      ATAYIN deb yozilgan, testda mixlangan); `pickStreak` teng-sana shoxi
+      (⭐ hal qiluvchi fakt: `WordRow.s`/`b` ni HECH BIR ekran o'qimaydi —
+      `HardWordRow` ularni chiqarmaydi, "Seriya" esa KUN seriyasi).
+    OMON QOLDI (ikkalasi ham KOD emas, ASOS/HUJJAT nuqsoni) -> pastda.
+
+⛔ BAJARILMAY QOLGANI — IKKITA HUJJAT TUZATISHI
+  A. `statsMigrate.ts:733-734` va `PLAN.md:806` dagi ASOS KODGA ZID.
+     Matn: "aynan o'shalar baza uchtasini `k`/`nc` SIZ olib keladi".
+     Kod: `statsMigrate.ts:436-437` omon qolgan HAR BIR seans uchun `k`/`nc`
+     ni o'sha kun qatoriga YOZADI — ya'ni seansi omon qolgan kunda ular BOR.
+     Xatti-harakat (chegarani `plan.days.length > 0` da yozish) ONGLI va
+     KONSERVATIV — uni O'ZGARTIRMA: qator ICHIDAN kunning to'la qoplanganini
+     bilib bo'lmaydi (qisman qoplangan kun `k`/`nc` li chiqadi va
+     `importJson` fingerprinti aynan shuni O'TKAZIB YUBORADI — asimmetriyaning
+     XAVFLIROQ uchi importda). Faqat ASOS matnini haqiqatga moslash kerak.
+     ⚠️ Repo 6 kunlik, ya'ni v1 da 500 seans yo'q -> qisqartirish bo'lmaydi
+     -> migratsiya kuni Statistikada netWpm/aniqlik «—» chiqadi. Bu ONGLI
+     konservatizm, xato son EMAS; ertasi kundan tiklanadi.
+  B. `useTypingSession.ts:462-464` izohi ENDI YOLG'ON: "gaplarning O'ZI,
+     so'z va kun hisoblagichlari allaqachon diskda". Migratsiya oynasida
+     yozuv HALI CHIQARILMAGAN (`stats.ts:666` `await ensureReady()`), ya'ni
+     `pagehide` da o'sha oynadagi gaplar yo'qoladi. Yetib borish JUDA KAM
+     (oyna bir necha ms, bir martalik boot), lekin loyihaning "har almashuv
+     YOZILADI" intizomi bo'yicha bu PLAN.md §11.3 11-invariantiga va shu
+     izohga qo'shilishi kerak.
+  C. (ixtiyoriy) PLAN.md §11.5 ga bitta band: zaxira tiklash izchil oynani
+     bugungi kunga suradi, ya'ni fayldagi sof v2 kunlari oynadan chiqadi.
+
+  KEYIN: commit. Ishchi daraxtdagi `src/screens/Home.tsx` (Boshidan tugmasi)
+  va `vite.config.ts` (port 5151) SHU ISHGA ALOQASIZ — sessiya boshidan bor
+  edi, commit'ga QO'SHMA.

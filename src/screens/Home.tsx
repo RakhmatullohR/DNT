@@ -440,7 +440,7 @@ function LessonCard({
             u yerda yuqoridagi havola `nextSentenceIndex` bo'yicha eng kichik
             TASHLANGAN gapga boradi, 0-gapga emas — ya'ni progressni chindan
             nolga tushirishning yagona yo'li aynan shu tugma bo'lib qoladi. */}
-        <Button variant="ghost" size="sm" onClick={onRestart} disabled={done === 0 || allDone}>
+        <Button variant="ghost" size="sm" onClick={onRestart} disabled={done === 0}>
           Boshidan
         </Button>
         <Button

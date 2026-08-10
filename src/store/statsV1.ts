@@ -219,7 +219,7 @@ export function parseStatsV1(raw: unknown, today: number): ParseV1Result {
     const exposures = Math.floor(toNonNegative(value['exposures']))
     const rawErrors = Math.floor(toNonNegative(value['errors']))
     if (exposures === 0) continue
-    // INVARIANT QOROVULI (`PLAN.md` §11.3, 9-invariant): manbada xato
+    // INVARIANT QOROVULI (`PLAN.md` §11.3, 10-invariant): manbada xato
     // TA'SIRLANISH darajasida sanaladi, ya'ni bu qisqich hech qachon
     // ishlamasligi kerak. Saqlanadi, chunki fayl BEGONA bo'lishi mumkin va
     // `rate > 1` reyting ustunlarini 100% dan oshirib yuborardi.

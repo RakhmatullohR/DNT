@@ -729,7 +729,7 @@ function writePlan(db: IDBDatabase, plan: MigrationPlan, at: number): Promise<bo
         meta.put(plan.seedAnchorDay ?? dayNumber(at), META_KEY_DECAY_ANCHOR_DAY)
 
         // ⭐ ARALASH DAVR CHEGARASI — FAQAT v1 kun qatorlari haqiqatan
-        // ko'chirilgan bo'lsa (`PLAN.md` §11.3, 10-invariant). Aynan o'shalar
+        // ko'chirilgan bo'lsa (`PLAN.md` §11.3, 9-invariant). Aynan o'shalar
         // baza uchtasini `k`/`nc` siz olib keladi, ya'ni nisbatni ikki xil
         // gaplar to'plamidan yig'adigan yagona manba.
         //

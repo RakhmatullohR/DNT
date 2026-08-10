@@ -552,7 +552,7 @@ function nextWordRow(
 
   const exposures = Math.floor(toNonNegative(delta.exposures))
   const rawErrors = Math.floor(toNonNegative(delta.errors))
-  // INVARIANT QOROVULI (`PLAN.md` §11.3, 9-invariant): manbada xato
+  // INVARIANT QOROVULI (`PLAN.md` §11.3, 10-invariant): manbada xato
   // TA'SIRLANISH darajasida sanaladi (`wordDeltaOf` dagi `min(…, 1)`), ya'ni
   // qisqich hech qachon ishlamasligi kerak. Qisqich DELTA darajasida turadi,
   // yig'indida emas — yig'indi qisqichi TARTIBGA BOG'LIQ bo'lib qolardi.
@@ -873,21 +873,33 @@ export async function loadOverview(): Promise<StatsOverview> {
  * nisbatan ANIQ REGRESSIYA (v1 da ikkala son ham AYNI `sessions` massividan
  * olinardi: oyna qisqa edi, lekin nisbat ichki jihatdan to'g'ri edi).
  *
- * ⭐ IZCHIL OYNA — `v1MigratedAt` MARKERIDAN KEYINGI kunlar (`d > migratsiya
- * kuni`). Nega aynan shu chegara: o'sha kunlar BUTUNLAY v2 yozuv yo'li bilan
- * yozilgan, ya'ni `activeMs`, `correctKeystrokes`, `k` va `nc` ning hammasi
- * AYNI gaplar to'plamidan chiqadi. Migratsiyadan oldingi kunlarda esa
+ * ⭐ IZCHIL OYNA — `meta.mixedEraDay` CHEGARASIDAN KEYINGI kunlar
+ * (`d > chegara`). Nega aynan shu chegara: o'sha kunlar BUTUNLAY v2 yozuv
+ * yo'li bilan yozilgan, ya'ni `activeMs`, `correctKeystrokes`, `k` va `nc`
+ * ning hammasi AYNI gaplar to'plamidan chiqadi. Aralash davrdagi kunlarda esa
  * `activeMs`/`correctKeystrokes` v1 `days` dan TO'LIQ, `k`/`nc` esa faqat omon
- * qolgan seanslardan — ular BITTA kun ichida ham kelishmaydi. Migratsiya
+ * qolgan seanslardan — ular BITTA kun ichida ham kelishmaydi. Chegara
  * kunining O'ZI ham chiqariladi: u ARALASH bo'lishi mumkin.
+ *
+ * ⚠️ CHEGARA `v1MigratedAt` MARKERI EMAS, va ajratish MAJBURIY. Marker
+ * "migratsiya TEKSHIRILDI" degani va u BO'SH v1 ombori uchun ham yoziladi
+ * (aks holda har boot'da hujjat bekorga qayta parse qilinardi). Uni chegara
+ * sifatida ishlatish v1 tarixi bo'lmagan — ya'ni HAR BIR YANGI —
+ * foydalanuvchining o'rnatilgan kunini oynadan chiqarib tashlardi: o'lchangan
+ * natija `netWpm`/`accuracy` = `null` va ustiga `ratiosSince` "ertadan beri"
+ * degan YOLG'ON belgi. Chegarani faqat ikkita yo'l yozadi — `writePlan` (v1
+ * KUN qatorlari haqiqatan ko'chirilganda) va `importJson` (faylda `k` yoki
+ * `nc` si yo'q kun bo'lganda).
  *
  * ⚠️ `null` — izchil oynada O'LCHOV YO'Q. Bu 0 EMAS: nol "0 wpm bilan tergan"
  * degan ma'noni berardi. Tip `number | null` — ekran uni jimgina o'tkazib
  * yubora olmaydi.
  *
- * ⚠️ `ratiosSince` FAQAT oyna butun tarixdan TOR bo'lganda qo'yiladi (ya'ni
- * migratsiya kunida yoki undan oldin ham kun qatori bo'lsa). Yo'qligi
- * "nisbatlar BUTUN tarixni qamraydi" degani.
+ * ⚠️ `ratiosSince` FAQAT CHEGARA QO'YILGAN bo'lsa qo'yiladi. Yo'qligi
+ * "nisbatlar BUTUN tarixni qamraydi" degani. Chegaradan PAST kun qatori
+ * haqiqatan bor-yo'qligi TEKSHIRILMAYDI: ikkala yozuvchi ham chegarani faqat
+ * aralash kunlar mavjud bo'lganda qo'yadi, ya'ni qo'shimcha `count()` so'rovi
+ * har `totals()` chaqiruviga tekinga tushardi.
  *
  * ⚠️ XOM hisoblagichlar (`sessions`, `activeMs`, `correctKeystrokes`,
  * `keystrokes`, `netChars`) hamon KONVERTDAN va o'zgarishsiz: ular TO'G'RI,
@@ -1837,7 +1849,7 @@ export async function importJson(
     meta.put(now, META_KEY_V1_MIGRATED_AT)
 
     // ⭐ ARALASH DAVR CHEGARASI IMPORTDA QAYTA HISOBLANADI (`PLAN.md` §11.3,
-    // 10-invariant). `meta.clear()` yuqorida chegarani ham o'chirdi, ya'ni uni
+    // 9-invariant). `meta.clear()` yuqorida chegarani ham o'chirdi, ya'ni uni
     // tiklamaslik fayldagi eski, `k`/`nc` si tiklanmagan kunlarni izchil oynaga
     // qo'shib yuborardi — BLOKER 1 aynan import orqali qaytardi.
     //
