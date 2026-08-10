@@ -18,12 +18,14 @@ import { Link, useParams } from 'react-router-dom'
 import { Button } from '../components/Button.tsx'
 import type { EmphasisRange } from '../core/emphasis.ts'
 import { isEmphasized } from '../core/emphasis.ts'
+import { maskedIndexes } from '../core/mask.ts'
 import type { TypingState } from '../core/types.ts'
 import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
 import type { BlockedKey } from '../hooks/useTypingSession.ts'
 import { useTypingSession } from '../hooks/useTypingSession.ts'
 import type { Lesson } from '../store/lessons.ts'
 import { getLesson } from '../store/lessons.ts'
+import { readPrefs, writePrefs } from '../store/prefs.ts'
 
 // Karta radiusi `--radius-panel` tokenidan keladi (index.css): mashq ekranining
 // paneli boshqa ekranlardagi karta bilan BIR XIL shaklda bo'lishi kerak, aks
@@ -251,6 +253,13 @@ function Bar({ value, color }: { value: number; color: string }) {
  * noto'g'ri tugma bosilganda matn o'zgarmaydi va React hech narsani yangilamas,
  * qayta ulanish esa quyidagi chaqnashni boshidan qo'yadi.
  *
+ * ⚠️ Kutilgan belgini KO'RSATADI, ya'ni bosh harf rejimida yashirin harfni
+ * ochib beradi. Bu ongli qaror: rejim yoqilganda so'zni eshita olmagan
+ * foydalanuvchi uchun boshqa chiqish yo'li qolmaydi (kursor noto'g'ri belgida
+ * turib qoladi — `typing.ts`, `block` rejimi), maslahat esa faqat XATO
+ * bosgandan keyin chiqadi va o'sha xato aniqlik ko'rsatkichiga yoziladi. Ya'ni
+ * "ochib olish" bepul emas.
+ *
  * SHU SABABLI butunlay `aria-hidden`. Komponent jonli hudud (`aria-live`)
  * ICHIDA turadi va qayta ulanish DOM mutatsiyasi hisoblanadi: bir xil xato
  * tugma ketma-ket bosilganda ekran o'quvchi bir xil xabarni har safar qaytadan
@@ -332,6 +341,7 @@ function Sentence({
   state,
   blocked,
   emphasis,
+  masked,
   sentenceNo,
   sentenceTotal,
 }: {
@@ -339,11 +349,21 @@ function Sentence({
   blocked: BlockedKey | null
   /** Import paytida `` `...` `` bilan belgilangan qalin oraliqlar (`core/emphasis.ts`). */
   emphasis: readonly EmphasisRange[]
+  /** Bosh harf rejimi yoniqmi (`core/mask.ts`). */
+  masked: boolean
   sentenceNo: number
   sentenceTotal: number
 }) {
   const chars = state.target.split('')
   const caretColor = blocked === null ? '#5ee6c1' : '#ff6b6b'
+
+  // Gap uchun bir marta: `state.tokens` gap davomida o'zgarmaydi (`typing.ts`
+  // `reduce` uni yangilamaydi), ya'ni har bosishda qayta hisoblash behuda
+  // bo'lardi. Rejim o'chiq bo'lsa umuman hisoblanmaydi.
+  const hidden = useMemo(
+    () => (masked ? maskedIndexes(state.tokens) : null),
+    [masked, state.tokens],
+  )
 
   return (
     <>
@@ -358,6 +378,29 @@ function Sentence({
       >
         {chars.map((ch, i) => {
           const errors = state.charErrors.get(i) ?? 0
+
+          // ⭐ Bosh harf rejimi. Ikki shart BIRGA:
+          //
+          //   `i >= state.cursor`  — YOZILGAN qism doim ochiq qoladi. Aks holda
+          //     xato rangi, nuqtali tag chizig'i va "qayerdaligim" hissi
+          //     birdan yo'qolardi: mashqning qiyin joyi keyingi so'zni ESLASH,
+          //     yozganini ko'ra olmaslik emas. `Backspace` kursorni orqaga
+          //     surganda harflar qaytadan yashirinadi — bu ham to'g'ri: ular
+          //     endi yana yoziladigan harflar.
+          //
+          //   `hidden.has(i)`      — qoida `core/mask.ts` da, shu yerda emas.
+          //
+          // Yashirish `visibility: hidden` (Tailwind `invisible`) bilan, MATN
+          // RANGINI shaffof qilish bilan emas. Uch sabab:
+          //   1. Yuqori kontrast rejimida (`forced-colors: active`) brauzer
+          //      matn RANGINI o'zinikiga majburan almashtiradi — shaffof harf
+          //      o'sha muhitda butunlay ochilib qolardi;
+          //   2. shaffof matnni sichqoncha bilan TANLAB ko'rish mumkin
+          //      (tanlash foni ostida harf ko'rinadi), `visibility: hidden`
+          //      esa umuman tanlanmaydi;
+          //   3. ikkalasi ham joyni saqlaydi, ya'ni "sakramaslik" shartida
+          //      farq yo'q — bu tanlov hech narsaga tushmaydi.
+          const invisible = hidden !== null && i >= state.cursor && hidden.has(i)
 
           // Qalinlik YOZUV HOLATIDAN mustaqil: u matn muallifining belgisi, holat
           // emas — shuning uchun uchala tarmoqda ham (yozilgan / kursor / yozilmagan)
@@ -378,6 +421,9 @@ function Sentence({
                 className={classes(
                   'relative',
                   weight,
+                  // `visibility` MEROS bo'ladi, ya'ni kursor chizig'i ham shu
+                  // bilan yo'qolardi — u pastda `visible` bilan qaytariladi.
+                  invisible ? 'invisible' : null,
                   blocked !== null
                     ? 'text-[#ffc2c2]'
                     : errors > 0
@@ -393,8 +439,12 @@ function Sentence({
                     hech qachon pasaymasligi kerak. Qolaversa animatsiya 2 s,
                     kursor esa har ~200 ms da siljiydi — ya'ni u har safar
                     tasodifiy shaffoflikda paydo bo'lardi. */}
+                {/* `visible` — bosh harf rejimida kursordagi HARF yashirin,
+                    lekin kursorning O'ZI ko'rinishi SHART: u yozuv qayerda
+                    turganini ko'rsatuvchi yagona signal va aynan yashirin
+                    joyda eng kerak. */}
                 <span
-                  className="absolute top-[0.12em] bottom-[0.12em] -left-px w-[2px] rounded-full"
+                  className="visible absolute top-[0.12em] bottom-[0.12em] -left-px w-[2px] rounded-full"
                   style={{ backgroundColor: caretColor }}
                 />
                 {/* Probel ODDIY probel bo'lib qoladi.
@@ -440,7 +490,11 @@ function Sentence({
           return (
             <span
               key={i}
-              className={classes(weight, errors > 0 ? 'text-[#b08a90]' : 'text-[#7d8b9c]')}
+              className={classes(
+                weight,
+                invisible ? 'invisible' : null,
+                errors > 0 ? 'text-[#b08a90]' : 'text-[#7d8b9c]',
+              )}
             >
               {ch}
             </span>
@@ -462,7 +516,14 @@ function Sentence({
           Raqam ham shu yerda: gap almashgani matnning o'zidan bilinmasligi
           mumkin (bir xil takrorlangan gaplar).
           Ikki til ikki `span` da: o'zbekcha raqamni inglizcha ovoz bilan o'qish
-          tushunarsiz chiqadi. */}
+          tushunarsiz chiqadi.
+
+          ⚠️ Bosh harf rejimida bu matn TO'LIQ qoladi va bu ongli qaror. Rejim
+          KO'RISH kanalidan nusxa ko'chirishni oladi; ekran o'quvchi bilan
+          ishlaydigan foydalanuvchida o'sha kanal yo'q — unga niqoblangan matn
+          berilsa ("Te, nuqta, nuqta"), qoladigan narsa umuman yozib bo'lmaydigan
+          gap bo'lardi. Ya'ni niqob u yerda qiyinlik emas, to'siq bo'lib
+          qolardi. */}
       <p className="sr-only" aria-live="polite">
         <span lang="uz">
           {sentenceNo} / {sentenceTotal}-gap:{' '}
@@ -608,6 +669,30 @@ function Session({ lesson }: { lesson: Lesson }) {
 
   // ⭐ Diqqat rejimi: butun oynada faqat yozuv maydoni qoladi.
   const [focusMode, setFocusMode] = useState(false)
+
+  /**
+   * ⭐ Bosh harf rejimi: so'z harflari yashiriladi (`core/mask.ts`).
+   *
+   * Diqqat rejimidan FARQLI o'laroq saqlanadi (`store/prefs.ts`). Sabab
+   * mashqning ritmida: seans 10 gap yoki 10 daqiqada tugaydi va Natijalar
+   * ekranidan qaytilganda bu komponent QAYTA ulanadi — saqlanmasa rejimni
+   * kuniga o'nlab marta qayta yoqishga to'g'ri kelardi. Diqqat rejimi esa
+   * "hozir jim o'tirib yozaman" degan bir martalik qaror.
+   *
+   * Boshlang'ich qiymat FUNKSIYA orqali o'qiladi: `useState(readPrefs()...)`
+   * omborni har renderda qayta o'qirdi.
+   */
+  const [maskWords, setMaskWords] = useState(() => readPrefs().maskWords)
+
+  function toggleMask(): void {
+    setMaskWords((on) => {
+      const next = !on
+      // Yozish natijasi TEKSHIRILMAYDI: kvota to'lgan bo'lsa ham rejim shu
+      // mashqda ishlayveradi, faqat keyingi safar esda qolmaydi (`prefs.ts`).
+      writePrefs({ maskWords: next })
+      return next
+    })
+  }
   /** Chiqish tugmasi ayni damda ko'rinib turibdimi (pastdagi izohga qarang). */
   const [controlsVisible, setControlsVisible] = useState(false)
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -733,6 +818,7 @@ function Session({ lesson }: { lesson: Lesson }) {
         state={state}
         blocked={blocked}
         emphasis={lesson.emphasis?.[session.sentenceIndex] ?? NO_EMPHASIS}
+        masked={maskWords}
         sentenceNo={session.sentenceIndex + 1}
         sentenceTotal={lesson.sentences.length}
       />
@@ -982,6 +1068,39 @@ function Session({ lesson }: { lesson: Lesson }) {
             So&apos;zni qaytarish
           </Button>
 
+          {/* ⭐ Bosh harf rejimi. Seansga TEGMAYDI (diqqat rejimi kabi): taymer,
+              ovoz va statistika o'zgarmaydi — yashirilgan matn ham aynan o'sha
+              matn bo'lib qolaveradi.
+
+              YOZUV o'zgarmaydi, holatni nuqta va `aria-pressed` aytadi. Bu
+              yonidagi "Ovoz yoniq / Ovoz o'chiq" dan boshqacha va ATAYIN: u
+              yerda yozuv HOLATNI ataydi, bu yerda esa rejim nomi ikkiga
+              bo'linmaydi — "Butun matn / Faqat bosh harf" juftligi tugmani
+              nima qilishini emas, hozir nima ko'rinayotganini aytardi va bosish
+              paytida o'quvchi ikkovini bir-biriga chalkashtirardi. Nom rejimni
+              ataydi, `aria-pressed` esa yoniq-o'chiqni — bu oddiy almashtirgich
+              tugmasining standart shakli.
+
+              `title` — nuqta rangini ko'rmaydigan yoki nomni birinchi marta
+              ko'rgan foydalanuvchi uchun: rejim nima qilishini bir jumlada
+              aytadi. */}
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-pressed={maskWords}
+            title="So'zlarning faqat bosh harfi ko'rinadi, qolgan harflar yashiriladi — matn diktant bo'lib qoladi. Tinish belgisi, raqam va yozib bo'lingan qism ochiq turadi."
+            onClick={toggleMask}
+          >
+            <span
+              aria-hidden="true"
+              className={[
+                'h-1.5 w-1.5 rounded-full',
+                maskWords ? 'bg-[#5ee6c1]' : 'bg-[#7d8b9c]',
+              ].join(' ')}
+            />
+            Bosh harf rejimi
+          </Button>
+
           {/* Butun oynani yozuv maydoniga topshiradi. Seansga TEGMAYDI: taymer
               yurishda davom etadi, ovoz va statistika o'zgarmaydi — bu faqat
               ko'rinish rejimi (fayl boshidagi izohga qarang). */}
@@ -997,6 +1116,18 @@ function Session({ lesson }: { lesson: Lesson }) {
           {session.audioEnabled && !session.serverOk ? (
             <span className="rounded-control border border-[#3a2c12] bg-[#151007] px-2 py-1 font-mono text-[11px] text-[#e0cfa8]">
               zaxira: brauzer ovozi
+            </span>
+          ) : null}
+
+          {/* Ikkovi birga yoqilganda mashq deyarli imkonsiz bo'lib qoladi:
+              so'z ham ko'rinmaydi, ham eshitilmaydi — qoladigan yagona manba
+              xato bosgandan keyin chiqadigan "kutilgan belgi" maslahati.
+              Rejim baribir O'CHIRILMAYDI (bu foydalanuvchining qarori, masalan
+              yod olingan matnni tekshirish), lekin holat aytib qo'yiladi: aks
+              holda birinchi gapdayoq ilova buzilgandek tuyulardi. */}
+          {maskWords && !session.audioEnabled ? (
+            <span className="rounded-control border border-[#3a2c12] bg-[#151007] px-2 py-1 font-mono text-[11px] text-[#e0cfa8]">
+              ovoz o&apos;chiq — yashirin so&apos;z eshitilmaydi
             </span>
           ) : null}
         </div>
