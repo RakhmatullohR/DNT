@@ -462,6 +462,17 @@ export function useTypingSession(lesson: Lesson): TypingSession {
    * navigatsiyani sekinlashtirardi. Yo'qotilishi mumkin bo'lgan yagona narsa —
    * yakuniy `endedAt` va og'irlangan yig'indi; gaplarning O'ZI, so'z va kun
    * hisoblagichlari allaqachon diskda.
+   *
+   * ⚠️ BITTA ISTISNO — MIGRATSIYA OYNASI. "Allaqachon diskda" da'vosi
+   * `writeSentences` ning tranzaksiyasi OCHILGAN bo'lishiga tayanadi, u esa
+   * `stats.ts` dagi §9 qorovulida (`await ensureReady()`) migratsiya
+   * tugagunicha kutadi. O'sha oynada sahifa o'lsa, kutayotgan gaplar diskka
+   * UMUMAN tushmaydi va bu yerda ularni qutqaradigan narsa yo'q:
+   * `writeSessionEnvelope` faqat MAVJUD seans qatorini yangilaydi, yangisini
+   * YARATMAYDI. Oyna bitta boot bilan chegaralangan (migratsiya ulanish
+   * bo'yicha memoizatsiya qilinadi) va odatda bir necha ms — gap terish esa
+   * sekundlar, ya'ni amalda yetib borilmaydi. ONGLI almashuv: qorovulsiz
+   * tartib kafolati umuman bo'lmasdi (`PLAN.md` §11.3, 11-invariant).
    */
   const recordAndClose = useCallback(
     (at: number): string | null => {

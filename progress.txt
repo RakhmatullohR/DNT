@@ -849,7 +849,15 @@ HOLAT: YASHIL, COMMIT QILINMAGAN
       `HardWordRow` ularni chiqarmaydi, "Seriya" esa KUN seriyasi).
     OMON QOLDI (ikkalasi ham KOD emas, ASOS/HUJJAT nuqsoni) -> pastda.
 
-⛔ BAJARILMAY QOLGANI — IKKITA HUJJAT TUZATISHI
+✅ BAJARILDI (quyidagi A/B/C — `cb2d3e1` DAN KEYINGI ishchi daraxtda)
+   Ko'rikning o'zi `cb2d3e1` da commit qilingan (841 test). A, B va C esa
+   undan keyin bajarildi: statsMigrate.ts:731 izohi, PLAN.md §11.3 806 va
+   818-qatorlari, useTypingSession.ts:460 izohi, PLAN.md §11.5 yangi bandi.
+   Darvozalar qayta tekshirildi: 841 test / 0 tip xatosi / build OK.
+   ⚠️ `cb2d3e1` ga `Home.tsx` va `vite.config.ts` ham kirib ketdi — ular shu
+   ishga aloqasiz edi, lekin endi tarixda.
+
+⛔ ASL RO'YXAT (tarix uchun) — IKKITA HUJJAT TUZATISHI
   A. `statsMigrate.ts:733-734` va `PLAN.md:806` dagi ASOS KODGA ZID.
      Matn: "aynan o'shalar baza uchtasini `k`/`nc` SIZ olib keladi".
      Kod: `statsMigrate.ts:436-437` omon qolgan HAR BIR seans uchun `k`/`nc`

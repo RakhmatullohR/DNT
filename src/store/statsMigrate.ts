@@ -729,9 +729,18 @@ function writePlan(db: IDBDatabase, plan: MigrationPlan, at: number): Promise<bo
         meta.put(plan.seedAnchorDay ?? dayNumber(at), META_KEY_DECAY_ANCHOR_DAY)
 
         // ⭐ ARALASH DAVR CHEGARASI — FAQAT v1 kun qatorlari haqiqatan
-        // ko'chirilgan bo'lsa (`PLAN.md` §11.3, 9-invariant). Aynan o'shalar
-        // baza uchtasini `k`/`nc` siz olib keladi, ya'ni nisbatni ikki xil
-        // gaplar to'plamidan yig'adigan yagona manba.
+        // ko'chirilgan bo'lsa (`PLAN.md` §11.3, 9-invariant).
+        //
+        // ⚠️ SHART ATAYIN QO'POL — kunlar SONI, mazmuni EMAS. Kunning to'la
+        // qoplanganini qatorning O'ZIDAN bilib bo'lmaydi: omon qolgan seansi
+        // YO'Q kun `k`/`nc` SIZ keladi, seansi QISMAN omon qolgan kun esa
+        // ular BILAN keladi (yuqorida har bir omon qolgan yozuvdan yoziladi)
+        // — lekin o'sha `k`/`nc` baza uchtasidan KAMROQ gapni qamraydi va
+        // farq qatorda KO'RINMAYDI. Shuning uchun ko'chirilgan bitta kun ham
+        // butun davrni "aralash" deb belgilaydi: oyna kerakligidan TOR
+        // bo'lgani yolg'on nisbatdan afzal.
+        // ⚠️ Buni `importJson` dagi `k`/`nc` fingerprintiga TENGLASHTIRMANG —
+        // o'sha fingerprint aynan qisman qoplangan kunni o'tkazib yuboradi.
         //
         // ⚠️ Markerning O'ZIDAN foydalanib bo'lmaydi: u bo'sh v1 ombori uchun
         // ham yoziladi, ya'ni har bir YANGI foydalanuvchida ham bor. Farqni
