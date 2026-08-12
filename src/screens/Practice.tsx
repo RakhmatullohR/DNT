@@ -17,7 +17,8 @@ import { Link, useParams } from 'react-router-dom'
 
 import { Button } from '../components/Button.tsx'
 import { SentenceNote } from '../components/SentenceNote.tsx'
-import { BAND_X, RAIL, RAIL_BTN } from '../components/practiceCard.ts'
+import { CloseIcon, NoteIcon } from '../components/Icons.tsx'
+import { BAND_X, FOCUS_ICON_BTN, RAIL, RAIL_BTN } from '../components/practiceCard.ts'
 import type { EmphasisRange } from '../core/emphasis.ts'
 import { isEmphasized } from '../core/emphasis.ts'
 import { maskedIndexes } from '../core/mask.ts'
@@ -92,7 +93,7 @@ const STACK = `${PANEL} mx-auto flex w-full max-w-5xl flex-col overflow-hidden s
  * izohning ikkita tugmasi kartada emas, ekranning o'ng yuqori burchagida —
  * rejim tugmalari bilan bir guruhda turadi va o'sha guruh bilan birga so'nadi.
  */
-const STACK_FOCUS = 'mx-auto flex w-full max-w-5xl flex-col'
+const STACK_FOCUS = 'mx-auto flex w-full flex-col'
 
 /**
  * Kartaning chap ustuni — barcha qavatlar shu yerda.
@@ -151,7 +152,7 @@ const FIELD_STACKED = [
  * matn esa tepada qoladi. Tepaga tekislanganda uzun matn faqat pastga o'sadi,
  * ya'ni qatlam skrollansa ham matnning boshi hech qachon kesilmaydi.
  */
-const FIELD_FOCUS = 'flex min-h-full w-full flex-col items-center justify-start outline-none'
+const FIELD_FOCUS = 'p-2 flex min-h-full w-full flex-col items-center justify-start outline-none'
 
 /**
  * Diqqat rejimi qatlami: butun oynani qoplaydi va faqat yozuv maydonini
@@ -210,7 +211,7 @@ const FIELD_FOCUS = 'flex min-h-full w-full flex-col items-center justify-start 
  */
 const DIALOG = [
   'fixed inset-0 z-50 m-0 h-full max-h-none w-full max-w-none',
-  'overflow-y-auto overscroll-contain border-0 bg-[#21222c] p-[30px] text-[#e6edf3]',
+  'overflow-y-auto overscroll-contain border-0 bg-[#21222c] pt-[50px] p-[30px] text-[#e6edf3]',
 ].join(' ')
 
 /**
@@ -220,8 +221,9 @@ const DIALOG = [
  * Qiymat yuqoridagi `bg-[#21222c]` bilan bir xil bo'lishi SHART, lekin sinf
  * bu konstantadan yasala olmaydi: Tailwind manba faylni matn sifatida o'qiydi
  * va o'zgaruvchining qiymatini bilmaydi, ya'ni sinf umuman generatsiya
- * qilinmasdi. Shuning uchun rang ikki joyda yozilgan — o'zgartirilsa ikkovi
- * ham yangilanishi kerak.
+ * qilinmasdi. Shuning uchun rang UCH joyda yozilgan — bu ikkitasi va
+ * `practiceCard.ts` dagi `FOCUS_ICON_BTN` ning fokus halqasi offseti — va
+ * o'zgartirilsa uchovi ham yangilanishi kerak.
  */
 const FOCUS_BG = '#21222c'
 
@@ -230,6 +232,27 @@ const CONTROLS_IDLE_MS = 2_500
 
 /** Chiqish tugmasining nomi — `aria-label` va `title` uchun YAGONA manba. */
 const EXIT_LABEL = 'Diqqat rejimidan chiqish'
+
+/**
+ * Izoh panelini ochadigan tugmaning nomi.
+ *
+ * `EXIT_LABEL` bilan bir xil sabab: tugma rafda yozuv bo'lib, diqqat rejimida
+ * esa ikonka bo'lib chiqadi va ikonkali variantda shu matn `aria-label` ga
+ * ketadi.
+ */
+const NOTES_LABEL = 'Izoh va rasm'
+
+/**
+ * O'sha tugmaning tushuntirishi — FAQAT rafda `title` bo'lib chiqadi.
+ *
+ * Diqqat rejimida `title` o'rniga NOM turadi: yozuvsiz tugmada maslahat
+ * nomning yagona ko'rinadigan manbai, ikki jumlalik izoh esa u yerda
+ * "bu tugma nima?" degan savolga javob berish o'rniga uni ko'mib yuborardi.
+ * Tushuntirish baribir yo'qolmaydi — panelning o'zi ochilganda buni pastdagi
+ * yordam qatori aytadi (`SentenceNote.tsx`).
+ */
+const NOTES_HINT =
+  "Joriy gapga matnli izoh va rasm biriktiriladi. Izoh shu brauzerda saqlanadi va dars zaxirasi bilan birga ko'chadi."
 
 /**
  * `Enter` shu tugmada TO'XTAYDI va `window` gacha yetmaydi.
@@ -316,8 +339,8 @@ function Stat({
 }) {
   return (
     <div>
-      <div className={LABEL}>{label}</div>
-      <div className="mt-2 flex items-baseline gap-1.5">
+      {label && <div className={LABEL}>{label}</div>}
+      <div className={`${label ? "mt-2" : "mt-0"} flex items-baseline gap-1.5`}>
         <span
           className="font-mono text-[16px] font-medium tabular-nums"
           style={{ color }}
@@ -675,26 +698,13 @@ function FocusToggle({
         variant="ghost"
         aria-label={EXIT_LABEL}
         title={EXIT_LABEL}
-        // `px-0!` — `size="sm"` ning `px-3` i bilan bitta xossa uchun kurashadi va
-        // g'olibni sinf tartibi emas, uslublar jadvalidagi tartib hal qilardi.
-        // Muhimlik belgisi natijani mixlab qo'yadi: tugma 32x32 kvadrat bo'ladi.
-        className={`h-8 w-8 px-0! ${className ?? ''}`}
+        // Shakl va fokus halqasi qo'shnilari bilan bir manbadan
+        // (`FOCUS_ICON_BTN`): bu tugma burchak qatorida yolg'iz emas.
+        className={`${FOCUS_ICON_BTN} ${className ?? ''}`}
         onClick={onToggle}
         onKeyDown={stopEnter}
       >
-        {/* `stroke="currentColor"` — X tugmaning matn rangini oladi, ya'ni
-            `hover`/`focus` holatlarida u bilan birga yorishadi. */}
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 16 16"
-          className="h-3.5 w-3.5"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        >
-          <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
-        </svg>
+        <CloseIcon />
       </Button>
     )
   }
@@ -818,11 +828,12 @@ function Session({ lesson }: { lesson: Lesson }) {
       className={className}
       aria-expanded={notesEnabled}
       aria-controls={notesEnabled ? notesPanelId : undefined}
-      title="Joriy gapga matnli izoh va rasm biriktiriladi. Izoh shu brauzerda saqlanadi va dars zaxirasi bilan birga ko'chadi."
+      aria-label={focusMode ? NOTES_LABEL : undefined}
+      title={focusMode ? NOTES_LABEL : NOTES_HINT}
       onClick={toggleNotes}
       onKeyDown={stopEnter}
     >
-      Izoh va rasm
+      {focusMode ? <NoteIcon /> : NOTES_LABEL}
     </Button>
   )
   /**
@@ -958,7 +969,7 @@ function Session({ lesson }: { lesson: Lesson }) {
       // istisno: diqqat rejimi + izoh o'chiq, ya'ni ekranda kartaga
       // qo'shiladigan hech narsa (na raf, na izoh) qolmaydigan holat —
       // o'shanda eski ramkasiz, markazlangan matn qaytadi.
-      className={focusMode && !notesEnabled ? FIELD_FOCUS : FIELD_STACKED}
+      className={focusMode ? FIELD_FOCUS : FIELD_STACKED}
     >
       <Sentence
         state={state}
@@ -1222,17 +1233,26 @@ function Session({ lesson }: { lesson: Lesson }) {
             'fixed top-4 right-4 z-10 flex items-center gap-2',
             'transition-opacity duration-200 ease-out motion-reduce:transition-none',
             'focus-within:opacity-100',
-            controlsVisible ? 'opacity-100' : 'opacity-0',
+            !controlsVisible ? 'opacity-100' : 'opacity-100',
           ].join(' ')}
         >
+          <div className="px-2 border border-[#452027] bg-transparen"><Stat
+            label=""
+            value={String(session.sentenceNo)}
+            unit={`/ ${session.sessionTotal}`}
+            color="#e6edf3"
+          /></div>
+          <div className="px-2 border border-[#452027] bg-transparent">{formatWpm(session.netWpm)} WPM</div>
           {/* `display: contents` — izohning "Rasm qo'shish" va "Yozuvga
               qaytish" tugmalari SHU YERGA portal qilinadi va shu qatorning
               teng huquqli a'zosi bo'ladi. Rejim tugmalaridan OLDIN turadi:
               yopish belgisi (×) burchakning eng chetida qolishi kerak, va DOM
               tartibi ko'z ko'rgan tartib bilan bir xil bo'lgani uchun `Tab`
               ham xuddi shu yo'ldan yuradi. */}
+              
           {rail}
-          {renderNotesToggle()}
+
+          {renderNotesToggle(FOCUS_ICON_BTN)}
           <FocusToggle
             active
             onToggle={() => {

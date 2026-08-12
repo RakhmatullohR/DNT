@@ -7,10 +7,10 @@
 // va taymer tikkillaganda) tekshiriladi, ikkalasi ham AYNAN shu funksiyaga tayanadi.
 
 /** Bir seansdagi maksimal gaplar soni (PLAN §7). */
-export const SESSION_MAX_SENTENCES = 20
+export const SESSION_MAX_SENTENCES = 200
 
 /** Bir seansning maksimal davomiyligi (ms) — 10 daqiqa (PLAN §7). */
-export const SESSION_MAX_MS = 10 * 60_000
+export const SESSION_MAX_MS = 600 * 60_000
 
 /**
  * Seansni tugatish vaqti keldimi.

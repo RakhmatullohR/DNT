@@ -23,7 +23,15 @@ import type { ChangeEvent, ClipboardEvent, KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 
 import { Button } from './Button.tsx'
-import { BAND_X, DIVIDER, RAIL_BTN, RAIL_NOTE } from './practiceCard.ts'
+import { ImagePlusIcon, ReturnIcon, SpinnerIcon } from './Icons.tsx'
+import {
+  BAND_X,
+  DIVIDER,
+  FOCUS_ICON_BTN,
+  RAIL_BTN,
+  RAIL_NOTE,
+  RAIL_NOTE_TIGHT,
+} from './practiceCard.ts'
 import { prepareImage } from '../media/imageResize.ts'
 import {
   addNoteImage,
@@ -58,6 +66,16 @@ const DEBOUNCE_MS = 600
 const MAX_WAIT_MS = 3000
 
 /**
+ * "Yozuvga qaytish" tugmasining nomi — YAGONA manba.
+ *
+ * Tugma ikki xil chiqadi: rafda yozuv bo'lib, diqqat rejimida esa strelka
+ * ikonkasi bo'lib. Ikonkali variantda shu matn `aria-label` va `title` ga
+ * ketadi, ya'ni ikki nusxa yozilsa ular vaqt o'tib ajralib ketardi
+ * (`Practice.tsx` dagi `EXIT_LABEL` naqshi).
+ */
+const RETURN_LABEL = 'Yozuvga qaytish'
+
+/**
  * Izoh maydoni — karta ICHIDAGI qavat, alohida quti EMAS.
  *
  * Chegara, fon va burchak radiusi ATAYIN yo'q: ular bo'lganda maydon
@@ -73,10 +91,10 @@ const MAX_WAIT_MS = 3000
  */
 const NOTE_FIELD = [
   BAND_X,
-  'w-full resize-y border-0 bg-transparent py-2',
+  'w-full resize-y border-0 bg-transparent py-2 px-2',
   'font-mono text-[#e6edf3] placeholder:text-[#7d8b9c]',
   'transition-colors duration-150 ease-out hover:bg-white/[0.02]',
-  'outline-none focus-visible:inset-ring-2 focus-visible:inset-ring-[#5ee6c1]',
+  'outline-none focus-visible:inset-ring-1 focus-visible:inset-ring-[#5ee6c1]',
 ].join(' ')
 
 /** Yozuv natijasini foydalanuvchi tilidagi sababga aylantiradi. */
@@ -382,10 +400,26 @@ export function SentenceNote({
   /**
    * Tugma shakli maqsadga qarab: oddiy rejimda u kartaning o'ng RAFIDA, ya'ni
    * ustundagi qo'shnilari bilan bir xil enda bo'lishi kerak; diqqat rejimida
-   * esa suzuvchi burchak QATORIDA, ya'ni mazmuni bo'yicha qisqarishi kerak —
-   * u yerda `w-full` tugmalarni bir-biriga siqib tashlardi.
+   * esa suzuvchi burchak QATORIDA yozuvsiz 32x32 kvadrat bo'ladi — u yerda
+   * `w-full` tugmalarni bir-biriga siqib tashlardi, yozuvning O'ZI esa
+   * rejimning "ekranda matndan boshqa hech narsa yo'q" va'dasini buzardi
+   * (`FOCUS_ICON_BTN` ga qarang).
    */
-  const railBtn = focusMode ? undefined : RAIL_BTN
+  const railBtn = focusMode ? FOCUS_ICON_BTN : RAIL_BTN
+
+  /**
+   * "Rasm qo'shish" ning yozuvsiz variantidagi nomi.
+   *
+   * Hisoblagich nomga KIRITILGAN: rafda son tugmaning yonida alohida turadi,
+   * ikonkali qatorda esa u ikkita glif orasidagi kichkina raqamga aylanadi —
+   * tugma nima uchun o'chganini `title` ning o'zi ham aytishi kerak. Uch holat
+   * uchun uchta nom: qo'shilmoqda, qo'shsa bo'ladi, chegara to'lgan.
+   */
+  const addLabel = busy
+    ? "Rasm qo’shilmoqda…"
+    : canAdd
+      ? `Rasm qo’shish — ${images.length} / ${MAX_IMAGES_PER_NOTE}`
+      : `Rasm chegarasi to’ldi — ${MAX_IMAGES_PER_NOTE} / ${MAX_IMAGES_PER_NOTE}`
 
   return (
     <>
@@ -415,15 +449,46 @@ export function SentenceNote({
                 variant="ghost"
                 className={railBtn}
                 disabled={!canAdd || busy}
+                aria-label={focusMode ? addLabel : undefined}
+                title={focusMode ? addLabel : undefined}
                 onKeyDown={stopEnter}
                 onClick={() => fileRef.current?.click()}
               >
-                {busy ? 'Qo’shilmoqda…' : "Rasm qo’shish"}
+                {focusMode ? (
+                  // Aylanish faqat shu yerda beriladi (`Icons.tsx` dagi izoh).
+                  // `motion-reduce` — harakatni kamaytirishni so'ragan
+                  // foydalanuvchida glif to'xtab qoladi, lekin holat baribir
+                  // ko'rinadi: halqa plyusli ramkadan butunlay boshqacha.
+                  busy ? (
+                    <SpinnerIcon className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+                  ) : (
+                    <ImagePlusIcon />
+                  )
+                ) : busy ? (
+                  'Qo’shilmoqda…'
+                ) : (
+                  "Rasm qo’shish"
+                )}
               </Button>
               {/* Chegara TUGMANING YONIDA turadi: 3/3 da tugma o'chadi va
-                  sababini aynan shu son aytadi. */}
-              <span className={RAIL_NOTE}>
-                {images.length} / {MAX_IMAGES_PER_NOTE} rasm
+                  sababini aynan shu son aytadi. Diqqat rejimida son qisqaradi
+                  ("1/3"), chunki yonidagi yozuvlar ham yo'qolgan va "rasm"
+                  so'zini endi ikonkaning o'zi aytadi — lekin FAQAT ko'zga:
+                  ekran o'quvchiga to'liq ibora `sr-only` orqali boradi, aks
+                  holda u yolg'iz "bir uchdan bir" ni o'qib qolardi. */}
+              <span className={focusMode ? RAIL_NOTE_TIGHT : RAIL_NOTE}>
+                {focusMode ? (
+                  <>
+                    <span aria-hidden="true">
+                      {images.length}/{MAX_IMAGES_PER_NOTE}
+                    </span>
+                    <span className="sr-only">
+                      {images.length} / {MAX_IMAGES_PER_NOTE} rasm
+                    </span>
+                  </>
+                ) : (
+                  `${images.length} / ${MAX_IMAGES_PER_NOTE} rasm`
+                )}
               </span>
               {/* Gap tugagach "Enter bosing" deyiladi, lekin fokus izoh
                   maydonida bo'lsa Enter yangi qator qo'shadi va mashq
@@ -433,10 +498,12 @@ export function SentenceNote({
                 size="sm"
                 variant="ghost"
                 className={railBtn}
+                aria-label={focusMode ? RETURN_LABEL : undefined}
+                title={focusMode ? RETURN_LABEL : undefined}
                 onKeyDown={stopEnter}
                 onClick={onReturnToField}
               >
-                Yozuvga qaytish
+                {focusMode ? <ReturnIcon /> : RETURN_LABEL}
               </Button>
             </>,
             railNode,
