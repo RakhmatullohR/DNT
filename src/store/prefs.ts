@@ -20,10 +20,26 @@ export type Prefs = {
    * (`core/mask.ts`).
    */
   maskWords: boolean
+  /**
+   * Yozuv maydoni ostida izoh va rasm paneli ko'rinadi (`components/SentenceNote.tsx`).
+   *
+   * ⚠️ Bu FAQAT KO'RINISHNI boshqaradi. Izohning o'zi butunlay boshqa omborda
+   * (`store/notes.ts`, `dnt-notes` bazasi) va dars `.json` zaxirasiga kiradi —
+   * ya'ni yuqoridagi "bu ma'lumot zaxira qilinmaydi" ogohlantirishi shu
+   * maydonning O'ZIGA tegishli, izohlarga EMAS. Sozlama yo'qolsa foydalanuvchi
+   * bitta tugmani qayta bosadi, xolos.
+   */
+  notesEnabled: boolean
 }
 
-/** O'chiq holat — standart. Yangi foydalanuvchi avval matnni ko'rib mashq qiladi. */
-const DEFAULTS: Prefs = { maskWords: false }
+/**
+ * O'chiq holat — standart. Yangi foydalanuvchi avval matnni ko'rib mashq qiladi.
+ *
+ * `notesEnabled` ham o'chiq: so'ralmagan panel ekranda paydo bo'lmasligi kerak,
+ * va o'chiq bo'lganda panel UMUMAN ulanmaydi — izoh ishlatmaydigan foydalanuvchi
+ * bitta ham baza o'qishiga pul to'lamaydi.
+ */
+const DEFAULTS: Prefs = { maskWords: false, notesEnabled: false }
 
 /**
  * `localStorage` ga xavfsiz murojaat — `lessons.ts` dagi `getStore` bilan
@@ -54,6 +70,8 @@ export function readPrefs(): Prefs {
   const raw = readRaw()
   return {
     maskWords: typeof raw['maskWords'] === 'boolean' ? raw['maskWords'] : DEFAULTS.maskWords,
+    notesEnabled:
+      typeof raw['notesEnabled'] === 'boolean' ? raw['notesEnabled'] : DEFAULTS.notesEnabled,
   }
 }
 

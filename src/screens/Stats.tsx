@@ -22,12 +22,14 @@ import { Sparkline } from '../components/Sparkline.tsx'
 import { SHRINKAGE_M, dayNumber, dayNumberToKey } from '../core/wordScore.ts'
 import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
 import {
+  describeLessonBackupImport,
+  exportAllLessonsBackup,
+  importLessonBackup,
+} from '../store/lessonBackup.ts'
+import {
   corruptLessonsBackup,
-  describeLessonsImport,
   discardCorruptLessonsBackup,
   discardUnknownLessons,
-  exportLessonsJson,
-  importLessonsJson,
   listLessons,
   unknownLessonCount,
 } from '../store/lessons.ts'
@@ -327,13 +329,16 @@ async function downloadJson(): Promise<void> {
  *
  * Ikkovini bitta faylga qo'shish mumkin edi, lekin ular bir xil qoidaga
  * bo'ysunmaydi: statistika importi ALMASHTIRADI, darslar importi esa
- * BIRLASHTIRADI (`lessons.importLessonsJson`). Bitta fayl foydalanuvchiga
+ * BIRLASHTIRADI (`lessonBackup.importLessonBackup`). Bitta fayl foydalanuvchiga
  * bitta tugma ko'rsatib, ichida ikki xil ish qilardi — shuning uchun fayl ham,
  * tugma ham ikkita.
  */
-function downloadLessons(): void {
+async function downloadLessons(): Promise<void> {
+  // ⚠️ ASYNC: gap izohlari va rasmlar IndexedDB'dan o'qiladi va shu faylga
+  // base64 bo'lib qo'shiladi (`store/lessonBackup.ts`) — ular darsning bir
+  // qismi, ya'ni darslar zaxirasi ularsiz to'liq bo'lmasdi.
   downloadText(
-    exportLessonsJson(),
+    await exportAllLessonsBackup(),
     `dnt-lessons-${stamp(new Date())}.json`,
     'application/json;charset=utf-8',
   )
@@ -523,6 +528,14 @@ export function Stats() {
   const [importArmed, setImportArmed] = useState<ImportTarget | null>(null)
   const [clearArmed, setClearArmed] = useState(false)
   const [message, setMessage] = useState<Message | null>(null)
+  /**
+   * Darslar eksporti ayni damda tayyorlanyaptimi.
+   *
+   * Statistika eksportida bunday bayroq YO'Q va bu farq ataylab: u faqat
+   * omborni o'qib JSON yasaydi, darslar eksporti esa HAR BIR RASMNI base64 ga
+   * o'giradi — ikki marta bosish ishni ham, xotira sarfini ham ikkilantirardi.
+   */
+  const [lessonsBusy, setLessonsBusy] = useState(false)
   const [damaged, setDamaged] = useState<Damaged[]>(readDamaged)
   const [damagedArmed, setDamagedArmed] = useState<Damaged | null>(null)
   const [junk, setJunk] = useState<number>(unknownLessonCount)
@@ -691,7 +704,7 @@ export function Stats() {
       return
     }
 
-    const result = importLessonsJson(raw)
+    const result = await importLessonBackup(raw)
     if (!result.ok) {
       setMessage({ kind: 'error', text: result.error })
       return
@@ -703,7 +716,15 @@ export function Stats() {
     setJunk(unknownLessonCount())
     setDamaged(readDamaged())
     setImportArmed(null)
-    setMessage({ kind: 'ok', text: describeLessonsImport(result.added, result.updated) })
+    setMessage({
+      kind: 'ok',
+      text: describeLessonBackupImport(
+        result.added,
+        result.updated,
+        result.notes,
+        result.notesFailed,
+      ),
+    })
   }
 
   function handleFile(event: ChangeEvent<HTMLInputElement>): void {
@@ -1383,8 +1404,31 @@ export function Stats() {
           <div>
             <div className={LABEL}>darslar</div>
             <div className="mt-2 flex flex-wrap gap-2">
-              <Button variant="ghost" onClick={downloadLessons} disabled={lessonCount === 0}>
-                JSON eksport
+              {/* ⚠️ Qo'shni `downloadJson` bilan BIR XIL sabab: `downloadLessons`
+                  endi asinxron (izohlar va rasmlar IndexedDB'dan o'qiladi),
+                  ya'ni `.catch` siz rad javobi hech kimga ko'rinmasdi.
+                  Statistika eksporti bilan FARQI — `lessonsBusy`: bu yerda
+                  har bosish har bir rasmni base64 ga o'giradi, ya'ni ikki marta
+                  bosish ishni ikkilantirib, xotirani ham ikkilantirardi. */}
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setMessage(null)
+                  setLessonsBusy(true)
+                  void downloadLessons()
+                    .catch((err: unknown) => {
+                      setMessage({
+                        kind: 'error',
+                        text: `Eksport qilib bo'lmadi: ${errorText(err)}`,
+                      })
+                    })
+                    .finally(() => {
+                      setLessonsBusy(false)
+                    })
+                }}
+                disabled={lessonCount === 0 || lessonsBusy}
+              >
+                {lessonsBusy ? 'Tayyorlanmoqda…' : 'JSON eksport'}
               </Button>
               <Button variant="ghost" onClick={() => armImport('lessons')}>
                 JSON import
@@ -1445,7 +1489,7 @@ export function Stats() {
           <div className="mt-4 rounded-control border border-[#22303d] bg-[#0b0f14] p-4">
             {/* Rang ATAYIN sariq emas: statistika importidan farqli o'laroq bu yerda
                 yo'qoladigan narsa yo'q — birlashtirish qoidasi va sababi
-                `lessons.importLessonsJson` da yozilgan. Panel baribir ko'rsatiladi,
+                `lessons.importLessonsFile` da yozilgan. Panel baribir ko'rsatiladi,
                 chunki "import" so'zi yuqoridagi tugmadan keyin almashtirishni
                 kutishga o'rgatib qo'ygan bo'lishi mumkin. */}
             <p className={NOTE}>

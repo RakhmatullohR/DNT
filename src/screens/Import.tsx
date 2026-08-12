@@ -22,13 +22,8 @@ import type { NormalizeResult } from '../core/normalize.ts'
 import { splitSentences } from '../core/splitSentences.ts'
 import { tokenize } from '../core/tokenize.ts'
 import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
-import {
-  describeLessonsImport,
-  importLessonsJson,
-  listLessons,
-  newLessonId,
-  saveLesson,
-} from '../store/lessons.ts'
+import { describeLessonBackupImport, importLessonBackup } from '../store/lessonBackup.ts'
+import { listLessons, newLessonId, saveLesson } from '../store/lessons.ts'
 import type { Lesson } from '../store/lessons.ts'
 
 const PANEL = 'rounded-panel border border-white/[0.07] bg-[#0e141c]'
@@ -367,13 +362,23 @@ export function Import() {
       return
     }
 
-    const result = importLessonsJson(text)
+    // ⚠️ ASYNC: darslar sinxron yoziladi, izohlar va rasmlar esa IndexedDB'ga
+    // (`store/lessonBackup.ts`). Izohlar yozilmasa ham darslar joyida qoladi.
+    const result = await importLessonBackup(text)
     if (!result.ok) {
       setRestore({ kind: 'error', text: result.error })
       return
     }
     setExistingTitles(readTitles())
-    setRestore({ kind: 'ok', text: describeLessonsImport(result.added, result.updated) })
+    setRestore({
+      kind: 'ok',
+      text: describeLessonBackupImport(
+        result.added,
+        result.updated,
+        result.notes,
+        result.notesFailed,
+      ),
+    })
   }
 
   function handleRestoreFile(event: ChangeEvent<HTMLInputElement>): void {

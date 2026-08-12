@@ -13,15 +13,17 @@ import { EmptyState } from '../components/EmptyState.tsx'
 import { StatsBanner } from '../components/StatsBanner.tsx'
 import { dayNumberToKey } from '../core/wordScore.ts'
 import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
+import { exportLessonBackup } from '../store/lessonBackup.ts'
 import {
   deleteLesson,
-  exportLessonJson,
   getLesson,
   listLessons,
   saveLesson,
   setProgress,
+  unknownLessonCount,
 } from '../store/lessons.ts'
 import type { Lesson } from '../store/lessons.ts'
+import { deleteLessonNotes, pruneOrphanNotes } from '../store/notes.ts'
 import { initStats, streakDays, totals } from '../store/stats.ts'
 import type { StatsAvailability, Totals } from '../store/stats.ts'
 
@@ -595,11 +597,12 @@ function LessonCard({
             id={confirmTextId}
             className="font-mono text-[13px] leading-relaxed text-[#ff9f9f]"
           >
-            &laquo;{title}&raquo; o&apos;chirilsinmi? Matn ham, davom ettirish nuqtasi ham
-            yo&apos;qoladi — nusxa faqat shu brauzerda saqlanadi. Qaytarishning yagona
-            yo&apos;li — OLDINDAN olingan zaxira fayli (shu kartadagi &laquo;.json
-            eksport&raquo; yoki Statistikadagi darslar zaxirasi): uni Import ekranidan
-            tiklaganda dars shu holatida qaytadi.
+            &laquo;{title}&raquo; o&apos;chirilsinmi? Matn ham, davom ettirish nuqtasi
+            ham, gaplarga yozilgan izoh va rasmlar ham yo&apos;qoladi — nusxa faqat shu
+            brauzerda saqlanadi. Qaytarishning yagona yo&apos;li — OLDINDAN olingan
+            zaxira fayli (shu kartadagi &laquo;.json eksport&raquo; yoki Statistikadagi
+            darslar zaxirasi): uni Import ekranidan tiklaganda dars izohlari bilan
+            birga shu holatida qaytadi.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button variant="danger" size="sm" onClick={onConfirmDelete}>
@@ -664,6 +667,29 @@ export function Home() {
   // qo'yadi, ya'ni keyingi `openDb()` yangi so'rov chiqarmaydi va `totals()`
   // bloklovchi tab yopilmaguncha umuman hal bo'lmaydi — `setAvailability` ga
   // esa navbat yetmasdi. `Stats.tsx` buni boshidan to'g'ri qilgan.
+  // Yetim izohlarni supurish. Bu ekran — darslarning ishonchli ro'yxatini
+  // ushlab turgan YAGONA joy, shuning uchun supurgi shu yerda.
+  //
+  // `deleteLesson` yonidagi tozalash yetarli emas: dars boshqa tabda o'chirilgan,
+  // buzuq payload yo'li bilan yo'qolgan yoki o'chirish paytida IDB yozmagan
+  // bo'lishi mumkin. Narxi — ikkita `getAllKeys()`, blob ochilmaydi.
+  //
+  // ⚠️ `main.tsx` ga QO'YILMAYDI: u domen modullarini ataylab import qilmaydi va
+  // u yerdagi supurgi ishlayotgan import bilan poyga bo'lardi.
+  useEffect(() => {
+    // ⚠️ TANIB BO'LMAGAN yozuv bo'lsa supurilmaydi. `listLessons()` faqat
+    // O'QILGAN darslarni beradi; `toLesson` rad etgan yozuv esa `unknown` bo'lib
+    // diskda ATAYIN saqlanadi (Statistika ekranida "tanilmagan yozuvlar" bo'lib
+    // ko'rinadi va foydalanuvchi uni tiklashi mumkin). Ular ro'yxatga
+    // tushmagani uchun supurgi ularning izohini "yetim" deb o'chirib yuborardi —
+    // dars matni saqlanib qolgani holda qo'lda yozilgan izoh yo'qolardi.
+    if (unknownLessonCount() > 0) return
+
+    // Bo'sh ro'yxatda ham supurgi HECH NARSA qilmaydi (`notes.ts` dagi qorovul):
+    // darslar omborini o'qib bo'lmagan holat "dars qolmadi" dan farq qilmaydi.
+    void pruneOrphanNotes(listLessons().map((lesson) => lesson.id))
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     void (async () => {
@@ -742,9 +768,12 @@ export function Home() {
    * bo'sh fayl bermaymiz: "zaxira oldim" degan yolg'on ishonch keyin qimmatga
    * tushadi. Xabar `notice` orqali beriladi, chunki ekranda boshqa yo'l yo'q.
    */
-  function handleBackup(id: string): void {
+  async function handleBackup(id: string): Promise<void> {
     const current = getLesson(id)
-    const text = current === null ? null : exportLessonJson(id)
+    // ⚠️ ASYNC: izohlar va rasmlar IndexedDB'dan o'qiladi va faylga base64
+    // bo'lib qo'shiladi (`store/lessonBackup.ts`). Rasmli darsda bu bir necha
+    // yuz millisekund olishi mumkin — shu vaqtda tugma `busy` holatida turadi.
+    const text = current === null ? null : await exportLessonBackup(id)
     if (current === null || text === null) {
       setLessons(listLessons())
       setNotice("Dars topilmadi — zaxira olinmadi. Ro'yxat yangilandi.")
@@ -770,6 +799,11 @@ export function Home() {
     headingRef.current?.focus()
 
     deleteLesson(id)
+    // Izohlar va rasmlar dars bilan birga ketadi — aks holda rasm bloblari
+    // kvotani abadiy egallab qolardi. Natija KUTILMAYDI: dars allaqachon
+    // o'chirildi va bu yerdagi nosozlik uchun foydalanuvchi qila oladigan ish
+    // yo'q; qolib ketgan qatorni keyingi yuklashdagi supurgi oladi.
+    void deleteLessonNotes(id)
     const next = listLessons()
     setConfirmId(null)
     setLessons(next)
@@ -993,7 +1027,14 @@ export function Home() {
                   lesson={lesson}
                   confirming={confirmId === lesson.id}
                   onRestart={() => handleRestart(lesson.id)}
-                  onBackup={() => handleBackup(lesson.id)}
+                  onBackup={() => {
+                    // Natija KUTILMAYDI: xato bo'lsa `handleBackup` ning o'zi
+                    // `notice` ga yozadi, `.catch` esa boshqarilmagan rad
+                    // javobini to'xtatadi.
+                    void handleBackup(lesson.id).catch(() => {
+                      setNotice("Zaxira olinmadi — qaytadan urinib ko'ring.")
+                    })
+                  }}
                   onAskDelete={() => setConfirmId(lesson.id)}
                   onCancelDelete={() => setConfirmId(null)}
                   onConfirmDelete={() => handleDelete(lesson.id)}

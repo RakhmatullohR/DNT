@@ -20,6 +20,8 @@ import { tokenize } from '../core/tokenize.ts'
 import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
 import { getLesson } from '../store/lessons.ts'
 import type { Lesson } from '../store/lessons.ts'
+import { listNotes } from '../store/notes.ts'
+import type { Note, NoteImage } from '../store/notes.ts'
 import {
   getSession,
   hardestWords,
@@ -252,6 +254,64 @@ async function sessionWordRows(session: SessionRecord, lesson: Lesson | null): P
 }
 
 // ---------------------------------------------------------------------------
+// Izohlar
+// ---------------------------------------------------------------------------
+
+/**
+ * Bitta gapning izohi: gap matni, yozilgan izoh va rasmlar.
+ *
+ * Gap matni DARSDAN olinadi (`lesson.sentences`), izoh yozuvidagi `s` dan emas:
+ * u faqat ≤80 belgi va mos kelmaslikni aniqlash uchun saqlanadi.
+ */
+function NoteRow({ note, sentence }: { note: Note; sentence: string }) {
+  return (
+    <li>
+      {sentence === '' ? null : (
+        <p lang="en" className="font-mono text-[13px] leading-relaxed text-[#7d8b9c]">
+          {note.sentenceIndex + 1}. {sentence}
+        </p>
+      )}
+      {note.text === '' ? null : (
+        <p className="mt-1.5 font-mono text-[13px] leading-relaxed whitespace-pre-wrap text-[#e6edf3]">
+          {note.text}
+        </p>
+      )}
+      {note.images.map((image) => (
+        <NoteImageView key={image.slot} image={image} />
+      ))}
+    </li>
+  )
+}
+
+/**
+ * Rasm eskizi.
+ *
+ * `URL.createObjectURL` effektda yaratilib, O'SHA effekt tozalashida bekor
+ * qilinadi — renderda yaratilsa har renderda bittadan URL oqib ketardi
+ * (`components/SentenceNote.tsx` dagi bilan bir xil qoida).
+ */
+function NoteImageView({ image }: { image: NoteImage }) {
+  const [url, setUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    const next = URL.createObjectURL(image.blob)
+    setUrl(next)
+    return () => {
+      URL.revokeObjectURL(next)
+    }
+  }, [image.blob])
+
+  if (url === null) return null
+  return (
+    <img
+      src={url}
+      alt={`Izoh rasmi: ${image.name}`}
+      className="mt-2 max-h-96 w-full rounded-control border border-white/[0.07] object-contain"
+    />
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Ekran
 // ---------------------------------------------------------------------------
 
@@ -262,6 +322,8 @@ type Loaded = {
   lesson: Lesson | null
   previous: SessionRecord | null
   streak: number
+  /** Shu seansdagi gaplarga yozilgan izohlar (`store/notes.ts`). */
+  notes: Note[]
 }
 
 export function Results() {
@@ -306,7 +368,14 @@ export function Results() {
 
       if (found === null) {
         if (cancelled) return
-        setData({ session: null, words: [], lesson: null, previous: null, streak: 0 })
+        setData({
+          session: null,
+          words: [],
+          lesson: null,
+          previous: null,
+          streak: 0,
+          notes: [],
+        })
         return
       }
 
@@ -314,14 +383,20 @@ export function Results() {
       // Bir marta o'qiladi va IKKI joyda ishlatiladi: so'zlar ro'yxati va
       // "Davom ettirish" tugmasining yorlig'i.
       const lesson = getLesson(found.lessonId)
-      const [words, previous, streak] = await Promise.all([
+      const [words, previous, streak, notes] = await Promise.all([
         sessionWordRows(found, lesson),
         previousSession(found),
         streakDays(),
+        // Faqat SHU seansdagi gaplar: butun darsning izohlari bu yerda emas,
+        // Natijalar ekrani bitta seansning hisoboti.
+        listNotes(
+          found.lessonId,
+          found.sentences.map((record) => record.sentenceIndex),
+        ),
       ])
 
       if (cancelled) return
-      setData({ session: found, words, lesson, previous, streak })
+      setData({ session: found, words, lesson, previous, streak, notes })
     })().catch((err: unknown) => {
       // `withStatsDb` `InvalidStateError` dan boshqa xatolarni QAYTA TASHLAYDI,
       // ya'ni bu shox haqiqiy. `.catch` siz bu boshqarilmagan rad javobi bo'lib,
@@ -391,7 +466,7 @@ export function Results() {
 
   if (session === null) return <NotFound sessionId={sessionId} availability={availability} />
 
-  const { words, lesson, previous, streak } = data
+  const { words, lesson, previous, streak, notes } = data
 
   const written = session.sentences.filter((record) => !record.skipped)
   const skippedCount = session.sentences.length - written.length
@@ -621,6 +696,29 @@ export function Results() {
           </p>
         </section>
       </Reveal>
+
+      {/* Izohlar. Bo'lim FAQAT izoh bo'lganda chiziladi: bo'sh sarlavha har
+          seansdan keyin takrorlanadigan shovqin bo'lardi. */}
+      {notes.length === 0 ? null : (
+        <Reveal delay={270}>
+          <section className={`${PANEL} mt-6 p-5 sm:p-6`}>
+            <div className={LABEL}>shu seansdagi izohlar</div>
+            <ul className="mt-4 space-y-5">
+              {notes.map((note) => (
+                <NoteRow
+                  key={note.sentenceIndex}
+                  note={note}
+                  sentence={lesson?.sentences[note.sentenceIndex] ?? ''}
+                />
+              ))}
+            </ul>
+            <p className="mt-5 border-t border-white/[0.06] pt-4 font-mono text-[11px] leading-relaxed text-[#7d8b9c]">
+              Izohlar shu brauzerda saqlanadi va dars zaxirasi (.json) bilan birga
+              ko&apos;chadi.
+            </p>
+          </section>
+        </Reveal>
+      )}
 
       <Reveal delay={280}>
         <div className="mt-6 flex flex-wrap gap-3">

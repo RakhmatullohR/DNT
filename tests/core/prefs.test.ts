@@ -68,7 +68,7 @@ afterEach(() => {
 
 describe('readPrefs', () => {
   it("bo'sh omborda standart qiymat", () => {
-    expect(readPrefs()).toEqual({ maskWords: false })
+    expect(readPrefs()).toEqual({ maskWords: false, notesEnabled: false })
   })
 
   it('saqlangan qiymatni qaytaradi', () => {
@@ -87,7 +87,19 @@ describe('readPrefs', () => {
   it("buzuq JSON standartga tushadi, yiqilmaydi", () => {
     localStorage.setItem(PREFS_KEY, 'bu JSON emas {{{')
 
-    expect(readPrefs()).toEqual({ maskWords: false })
+    expect(readPrefs()).toEqual({ maskWords: false, notesEnabled: false })
+  })
+
+  it('`notesEnabled` ham saqlanadi va qaytadi', () => {
+    writePrefs({ notesEnabled: true })
+
+    expect(readPrefs().notesEnabled).toBe(true)
+  })
+
+  it("noto'g'ri TIPDAGI `notesEnabled` standartga tushadi", () => {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ notesEnabled: 'true' }))
+
+    expect(readPrefs().notesEnabled).toBe(false)
   })
 
   it("noto'g'ri TIPDAGI qiymat standartga tushadi", () => {
@@ -100,13 +112,13 @@ describe('readPrefs', () => {
   it('ildiz obyekt bo\'lmasa standartga tushadi', () => {
     localStorage.setItem(PREFS_KEY, JSON.stringify([1, 2, 3]))
 
-    expect(readPrefs()).toEqual({ maskWords: false })
+    expect(readPrefs()).toEqual({ maskWords: false, notesEnabled: false })
   })
 
   it("`localStorage` umuman bo'lmasa standart qaytadi", () => {
     vi.stubGlobal('localStorage', undefined)
 
-    expect(readPrefs()).toEqual({ maskWords: false })
+    expect(readPrefs()).toEqual({ maskWords: false, notesEnabled: false })
   })
 })
 
@@ -116,6 +128,16 @@ describe('writePrefs', () => {
     writePrefs({ maskWords: false })
 
     expect(readPrefs().maskWords).toBe(false)
+  })
+
+  it('bitta maydonni yozish QO\'SHNISINI o\'chirmaydi', () => {
+    // `writePrefs` — `Partial<Prefs>` ustidan birlashtirish. Ikki maydon paydo
+    // bo'lgach bu xossa sinovsiz qolsa, keyingi sozlama qo'shilganda jimgina
+    // buzilardi.
+    writePrefs({ maskWords: true })
+    writePrefs({ notesEnabled: true })
+
+    expect(readPrefs()).toEqual({ maskWords: true, notesEnabled: true })
   })
 
   it("TANILMAGAN maydonlar saqlanib qoladi", () => {
