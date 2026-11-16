@@ -546,12 +546,90 @@ export function newLessonId(): string {
  * `kind` esa `version` yolg'iz hal qila olmaydigan narsani hal qiladi: ikkala
  * faylda ham `version: 1` turadi, ya'ni farqni faqat maydonlar nomi ko'rsatadi.
  */
-type LessonsFile = { version: 1; kind: 'lessons'; lessons: Lesson[] }
+type LessonsFile = { version: 2; kind: 'lessons'; lessons: Lesson[]; notes?: NoteBackupRow[] }
 
-/** Zaxira uchun o'qish mumkin bo'lgan JSON (2 probel chekinish, `stats.exportJson` bilan bir xil). */
-export function exportLessonsJson(): string {
-  const file: LessonsFile = { version: 1, kind: 'lessons', lessons: listLessons() }
-  return JSON.stringify(file, null, 2)
+/**
+ * Zaxira faylidagi bitta gap izohi.
+ *
+ * ⭐ Izohlar dars YOZUVINING ICHIDA emas, konvertda YONMA-YON turadi. Sabab:
+ * `Lesson` tipi va uni tekshiradigan `toLesson` — omborning eng ko'p sinalgan
+ * qismi; unga rasm olib yuradigan maydon qo'shish buzuq-yozuv himoyasini ham,
+ * `unknown` saqlash mantiqini ham qaytadan ko'rib chiqishni talab qilardi.
+ * Yonma-yon turgan ro'yxatni esa bitta funksiya tekshiradi va u yiqilsa faqat
+ * izohlar yo'qoladi, darslar emas.
+ *
+ * Rasm `data` — `data:` prefiksisiz base64; turi alohida maydonda. Bu modul
+ * base64 ni O'GIRMAYDI (u yerda `Blob` kerak, bu fayl esa sof) — o'girish
+ * `lessonBackup.ts` da.
+ */
+export type NoteBackupRow = {
+  lessonId: string
+  sentenceIndex: number
+  text: string
+  updatedAt: number
+  /** Yozilgan paytdagi gap boshi — `notesSchema.ts` dagi `NoteRow.s`. */
+  s?: string
+  images?: { name: string; type: string; data: string }[]
+  /**
+   * ⭐ `true` — zaxira olinayotganda kamida bitta rasm O'QILMADI, ya'ni
+   * yuqoridagi `images` shu gapning HAMMA rasmi emas.
+   *
+   * Busiz tiklash jimgina ma'lumot yo'qotardi: qisqargan ro'yxatni "to'liq" deb
+   * qabul qilgan import ombordagi sog'lom rasmlarni o'chirib, o'rniga faqat
+   * omon qolganlarini yozardi. Maydon QO'SHIMCHA va ixtiyoriy — uni bilmaydigan
+   * o'quvchi avvalgidek ishlayveradi.
+   */
+  imagesPartial?: boolean
+}
+
+/**
+ * Zaxira uchun o'qish mumkin bo'lgan JSON (2 probel chekinish, `stats.exportJson`
+ * bilan bir xil).
+ *
+ * `notes` ixtiyoriy: bu modul izohlar omborini BILMAYDI (u IndexedDB'da va
+ * `core` testlari uni ko'rmasligi kerak), shuning uchun ularni chaqiruvchi
+ * yig'ib beradi — `lessonBackup.ts`.
+ */
+export function exportLessonsJson(notes?: readonly NoteBackupRow[]): string {
+  return JSON.stringify(buildFile(listLessons(), notes), null, 2)
+}
+
+/**
+ * Konvert. `version: 2` — izohli fayl formati.
+ *
+ * Eski qurilma bu faylni "Qo'llab-quvvatlanmaydigan versiya" deb OCHIQ rad
+ * etadi, jimgina izohsiz tiklamaydi. Bu shu moduldagi umumiy qoida:
+ * noto'g'ri fayl SABABI bilan rad etilishi kerak.
+ */
+function buildFile(lessons: Lesson[], notes?: readonly NoteBackupRow[]): LessonsFile {
+  return {
+    version: 2,
+    kind: 'lessons',
+    lessons,
+    // Bo'sh ro'yxat YOZILMAYDI: zaxira faylini qo'lda ochgan odam "izohlar bor
+    // ekan-u, bo'sh" deb o'ylamasin.
+    ...(notes === undefined || notes.length === 0 ? {} : { notes: [...notes] }),
+  }
+}
+
+/**
+ * BITTA darsning zaxirasi. Dars topilmasa `null` — chaqiruvchi buni bo'sh
+ * fayldan (ya'ni "zaxira oldim" degan yolg'on xabardan) ajrata olishi kerak.
+ *
+ * ⭐ Envelope `exportLessonsJson` niki bilan AYNAN bir xil, faqat `lessons`
+ * uzunligi bitta. Bu SHART, tasodif emas: shu tufayli yakka dars faylini ham,
+ * to'liq zaxirani ham `importLessonsJson` ning O'ZI qabul qiladi va ikkinchi
+ * "faqat bitta dars uchun" o'qish yo'li umuman kerak bo'lmaydi. Ikki yo'l
+ * bo'lganda ular vaqt o'tib bir-biridan ajralib ketardi.
+ *
+ * Fayl ichida progress ham, `skipped` ham bor — dars kartasidagi `.txt`
+ * eksportdan farqi shu: u faqat gaplar matnini beradi, ya'ni undan dars
+ * o'chirilgan joyidan tiklanmaydi.
+ */
+export function exportLessonJson(id: string, notes?: readonly NoteBackupRow[]): string | null {
+  const lesson = getLesson(id)
+  if (lesson === null) return null
+  return JSON.stringify(buildFile([lesson], notes), null, 2)
 }
 
 /**
@@ -568,8 +646,13 @@ function readFileRows(parsed: unknown): { ok: true; rows: unknown[] } | { ok: fa
   if (!isRecord(parsed)) {
     return { ok: false, error: 'Fayl formati noto\'g\'ri: JSON obyekti yoki massivi kutilgan edi.' }
   }
-  if (parsed['version'] !== 1) {
-    return { ok: false, error: 'Qo\'llab-quvvatlanmaydigan versiya: `version: 1` kutilgan edi.' }
+  // 1 — izohsiz eski fayl, 2 — izohli. Ikkovi ham o'qiladi: eski zaxira
+  // qo'ldan chiqmasligi kerak.
+  if (parsed['version'] !== 1 && parsed['version'] !== 2) {
+    return {
+      ok: false,
+      error: 'Qo\'llab-quvvatlanmaydigan versiya: `version: 1` yoki `2` kutilgan edi.',
+    }
   }
   const rows = parsed['lessons']
   if (!Array.isArray(rows)) {
@@ -612,6 +695,29 @@ export type LessonsImportResult =
   | { ok: false; error: string }
 
 /**
+ * Muvaffaqiyatli importning SONLAR bilan aytilgan natijasi.
+ *
+ * "Tiklandi" degan quruq xabar yetarli emas: import birlashtiradi, ya'ni fayl
+ * allaqachon mavjud darslarni takrorlashi mumkin. Nechtasi yangi, nechtasi
+ * ustiga yozilgani — foydalanuvchining to'g'ri faylni tanlaganini tekshiradigan
+ * yagona belgisi.
+ *
+ * Xato matnlari (`importLessonsJson`) bilan bir joyda turadi va shu sababdan
+ * ekran ichida emas, shu modulda: uni ikki ekran — Import va Statistika — bir
+ * xil o'qiydi, ikki nusxa esa vaqt o'tib bir-biridan ajralib ketardi.
+ *
+ * Ikkovi bir vaqtda nol bo'lolmaydi: bunday holat importdan XATO qaytaradi.
+ */
+export function describeLessonsImport(added: number, updated: number): string {
+  const parts: string[] = []
+  if (added > 0) parts.push(`${added} ta dars qo'shildi`)
+  if (updated > 0) {
+    parts.push(added > 0 ? `${updated} tasi yangilandi` : `${updated} ta dars yangilandi`)
+  }
+  return `${parts.join(', ')}.`
+}
+
+/**
  * Zaxiradan tiklaydi. Statistikadan FARQLI o'laroq bu BIRLASHTIRISH, almashtirish
  * emas — va farqning sababi ikkala omborning tabiatida:
  *
@@ -635,7 +741,17 @@ export function importLessonsJson(raw: string): LessonsImportResult {
   } catch {
     return { ok: false, error: 'Faylni JSON sifatida o\'qib bo\'lmadi.' }
   }
+  return importLessonsFile(parsed)
+}
 
+/**
+ * O'QILGAN fayldan tiklaydi.
+ *
+ * Alohida chiqarilgan, chunki izohli zaxira (`lessonBackup.ts`) faylni o'zi
+ * ham o'qishi kerak: bitta satrni ikki marta `JSON.parse` qilish bir necha MB
+ * li faylda sezilarli kechikish berardi.
+ */
+export function importLessonsFile(parsed: unknown): LessonsImportResult {
   const file = readFileRows(parsed)
   if (!file.ok) return { ok: false, error: file.error }
 
@@ -669,4 +785,72 @@ export function importLessonsJson(raw: string): LessonsImportResult {
     return { ok: false, error: 'Yozib bo\'lmadi: brauzer xotirasi to\'lgan bo\'lishi mumkin.' }
   }
   return { ok: true, added, updated }
+}
+
+/**
+ * Fayldagi izohlar ro'yxatini o'qiydi. Tanib bo'lmagan yozuv JIMGINA tashlanadi.
+ *
+ * `lessonIds` — SHU faylda haqiqatan bor darslar. Begona `lessonId` li izoh
+ * qabul qilinmaydi: u hech qachon ko'rinmaydigan, faqat kvota egallaydigan
+ * yetim qator bo'lardi.
+ *
+ * Buzuq bitta rasm butun izohni ham, butun faylni ham yiqitmaydi — u shunchaki
+ * tushib qoladi (`toLesson` dagi "yakka yozuv tashlanadi" qoidasining davomi).
+ */
+export function readFileNotes(parsed: unknown, lessonIds: readonly string[]): NoteBackupRow[] {
+  if (!isRecord(parsed)) return []
+  const raw = parsed['notes']
+  if (!Array.isArray(raw)) return []
+
+  const known = new Set(lessonIds)
+  const rows: NoteBackupRow[] = []
+
+  for (const item of raw) {
+    if (!isRecord(item)) continue
+
+    const lessonId = item['lessonId']
+    if (typeof lessonId !== 'string' || !known.has(lessonId)) continue
+
+    const sentenceIndex = item['sentenceIndex']
+    if (typeof sentenceIndex !== 'number' || !Number.isInteger(sentenceIndex)) continue
+    if (sentenceIndex < 0) continue
+
+    const head = item['s']
+    const rawImages = item['images']
+    const images = readNoteImages(rawImages)
+    // Fayl o'zi "to'liq emas" deb aytgan bo'lsa ham, biz O'QIY olmagan yozuv
+    // tushib qolgan bo'lsa ham — ro'yxat ishonchsiz.
+    const partial =
+      item['imagesPartial'] === true ||
+      (Array.isArray(rawImages) && images.length < rawImages.length)
+
+    rows.push({
+      lessonId,
+      sentenceIndex,
+      text: toText(item['text'], ''),
+      updatedAt: toFiniteNumber(item['updatedAt'], 0),
+      ...(typeof head === 'string' && head !== '' ? { s: head } : {}),
+      images,
+      ...(partial ? { imagesPartial: true } : {}),
+    })
+  }
+
+  return rows
+}
+
+function readNoteImages(raw: unknown): { name: string; type: string; data: string }[] {
+  if (!Array.isArray(raw)) return []
+
+  const images: { name: string; type: string; data: string }[] = []
+  for (const item of raw) {
+    if (!isRecord(item)) continue
+    const data = item['data']
+    if (typeof data !== 'string' || data === '') continue
+    images.push({
+      name: toText(item['name'], 'rasm'),
+      type: toText(item['type'], ''),
+      data,
+    })
+  }
+  return images
 }

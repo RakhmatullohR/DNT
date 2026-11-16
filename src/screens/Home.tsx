@@ -10,10 +10,22 @@ import { Link } from 'react-router-dom'
 import { DEFAULT_RATE, DEFAULT_VOICE, RATES, VOICES } from '../../shared/filename.ts'
 import { Button } from '../components/Button.tsx'
 import { EmptyState } from '../components/EmptyState.tsx'
+import { StatsBanner } from '../components/StatsBanner.tsx'
+import { dayNumberToKey } from '../core/wordScore.ts'
 import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
-import { deleteLesson, getLesson, listLessons, saveLesson, setProgress } from '../store/lessons.ts'
+import { exportLessonBackup } from '../store/lessonBackup.ts'
+import {
+  deleteLesson,
+  getLesson,
+  listLessons,
+  saveLesson,
+  setProgress,
+  unknownLessonCount,
+} from '../store/lessons.ts'
 import type { Lesson } from '../store/lessons.ts'
-import { streakDays, totals } from '../store/stats.ts'
+import { deleteLessonNotes, pruneOrphanNotes } from '../store/notes.ts'
+import { initStats, streakDays, totals } from '../store/stats.ts'
+import type { StatsAvailability, Totals } from '../store/stats.ts'
 
 const PANEL = 'rounded-panel border border-white/[0.07] bg-[#0e141c]'
 const LABEL = 'font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-muted'
@@ -110,7 +122,15 @@ function rateLabel(rate: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Gaplarni `.txt` ga eksport qilish (PLAN §10)
+// Darsni faylga chiqarish (PLAN §10)
+//
+// IKKI XIL eksport bor va ular BOSHQA-BOSHQA ish qiladi — shuning uchun ikkita
+// tugma ham:
+//
+//   `.txt`  — faqat gaplar matni, tashqi TTS quvuri uchun. Progress tushmaydi.
+//   `.json` — darsning BUTUN holati (progress, tashlangan gaplar, ta'kidlash,
+//             ovoz va tezlik), ya'ni ZAXIRA: dars o'chirilgan bo'lsa ham Import
+//             ekranidan aynan o'sha joyidan qaytariladi.
 // ---------------------------------------------------------------------------
 
 /** Sarlavhadan xavfsiz fayl nomi. Bo'sh qolsa dars `id` si ishlatiladi. */
@@ -134,13 +154,20 @@ function safeFileName(lesson: Lesson): string {
  * quvurda qoladi va unga matnni olib o'tish yo'li ochiq bo'lishi kerak.
  */
 function downloadSentences(lesson: Lesson): void {
-  const blob = new Blob([`${lesson.sentences.join('\n')}\n`], {
-    type: 'text/plain;charset=utf-8',
-  })
+  downloadFile(
+    `${lesson.sentences.join('\n')}\n`,
+    `${safeFileName(lesson)}.txt`,
+    'text/plain;charset=utf-8',
+  )
+}
+
+/** Ekrandagi YAGONA yuklash yo'li — `Stats.tsx` dagi `downloadText` bilan bir xil. */
+function downloadFile(text: string, filename: string, mime: string): void {
+  const blob = new Blob([text], { type: mime })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `${safeFileName(lesson)}.txt`
+  anchor.download = filename
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
@@ -149,20 +176,73 @@ function downloadSentences(lesson: Lesson): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
+/**
+ * Zaxira fayli nomiga qo'shiladigan sana (`YYYY-MM-DD` — `Stats.tsx` dagi
+ * zaxira nomlari bilan bir xil shakl).
+ *
+ * `.txt` da bunday belgi YO'Q va bu farq ATAYIN: `.txt` ning ichi dars matni
+ * o'zgarmaguncha o'zgarmaydi, `.json` esa har mashqdan keyin BOSHQA bo'ladi —
+ * ichida progress bor. Sanasiz ikki haftalik zaxira brauzerda «dars.json» va
+ * «dars (1).json» bo'lib yotardi va qaysi biri yangiroq ekanini fayl nomidan
+ * bilib bo'lmasdi.
+ */
+function stamp(now: Date): string {
+  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`
+}
+
 // ---------------------------------------------------------------------------
 // Yig'indi
 // ---------------------------------------------------------------------------
 
-type Summary = {
-  sessions: number
-  activeMs: number
-  netWpm: number
-  accuracy: number
-  streak: number
+/**
+ * Yuqoridagi beshta raqamning holati.
+ *
+ * ⚠️ UCH holat, ikkita emas (docs/stats-longterm.md §4.3, F4):
+ *
+ *   `null`                — hali YUKLANMAGAN (ombor asinxron);
+ *   `{ totals: null }`    — umrbod konvert YO'Q. Bu "hammasi nol" DEGANI EMAS:
+ *                           nol ko'rsatish qisman yoki noma'lum holatni
+ *                           "umrbod hech narsa qilmagansiz" deb ko'rsatardi;
+ *   `{ totals: {...} }`   — o'lchangan.
+ *
+ * Uchalasi ekranda ham FARQ QILADI (`PENDING` / `UNKNOWN` / son).
+ */
+type Summary = { totals: Totals | null; streak: number }
+
+/** Hali yuklanmagan qiymat. */
+const PENDING = '…'
+/**
+ * O'lchanmagan qiymat — nol EMAS (`PLAN.md` §11.3, 4-invariant).
+ *
+ * Ikki holatda chiqadi: umrbod konvert topilmaganda VA nisbat (`netWpm`,
+ * `accuracy`) `null` bo'lganda, ya'ni ularni izchil o'lchash uchun yetarli
+ * oyna hali yo'q. Bu ekrandagi «—» ning o'zbekcha yozilishi.
+ */
+const UNKNOWN = "noma'lum"
+/** O'qish XATO bilan tugadi — `PENDING` da abadiy osilib qolmaslik uchun. */
+const FAILED = 'xato'
+
+/**
+ * `*Since` si bor maydon `≥ N` bo'lib chiziladi (§4.3).
+ *
+ * ⚠️ FAQAT XOM, MONOTON hisoblagichlarga (`sessions`, `keystrokes`, `activeMs`)
+ * qo'llanadi. NISBATGA (`netWpm`, `accuracy`) qo'llash MUMKIN EMAS va bu shu
+ * yerda o'lchangan xato edi: nisbat monoton emas — yangi ma'lumot uni
+ * PASAYTIRISHI ham mumkin, ya'ni "ko'rsatilgandan kam emas" degan va'da
+ * yolg'on bo'lardi. Amalda ekran haqiqiy 96% o'rniga «≥ 100.0%» chizardi.
+ *
+ * Sabab jadvalda: `sessions` va `keystrokes` faqat OMON QOLGAN seanslardan
+ * bilinadi, `activeMs` esa `days` dan ANIQ. Ularni bir xil ko'rsatish qisman
+ * sonni yalang'och umrbod raqam qilib qo'yardi — §4.3 aynan shu xatoning
+ * oldini olish uchun yozilgan.
+ */
+function partial(value: string, since: number | undefined): string {
+  return since === undefined ? value : `≥ ${value}`
 }
 
-function readSummary(): Summary {
-  return { ...totals(), streak: streakDays() }
+/** Xato matni — `unknown` dan foydalanuvchiga ko'rsatiladigan satr. */
+function errorText(err: unknown): string {
+  return err instanceof Error && err.message !== '' ? err.message : String(err)
 }
 
 /** Uzilmas bo'shliq — son bilan uning birligini bir-biridan ajratmaydi. */
@@ -248,6 +328,7 @@ type LessonCardProps = {
   lesson: Lesson
   confirming: boolean
   onRestart: () => void
+  onBackup: () => void
   onAskDelete: () => void
   onCancelDelete: () => void
   onConfirmDelete: () => void
@@ -258,6 +339,7 @@ function LessonCard({
   lesson,
   confirming,
   onRestart,
+  onBackup,
   onAskDelete,
   onCancelDelete,
   onConfirmDelete,
@@ -398,9 +480,12 @@ function LessonCard({
             u yerda yuqoridagi havola `nextSentenceIndex` bo'yicha eng kichik
             TASHLANGAN gapga boradi, 0-gapga emas — ya'ni progressni chindan
             nolga tushirishning yagona yo'li aynan shu tugma bo'lib qoladi. */}
-        <Button variant="ghost" size="sm" onClick={onRestart} disabled={done === 0 || allDone}>
+        <Button variant="ghost" size="sm" onClick={onRestart} disabled={done === 0}>
           Boshidan
         </Button>
+        {/* Ikki eksport YONMA-YON turadi va yorliqlari ataylab bir xil shaklda
+            (`.kengaytma eksport`): ular bir oilaga tegishli, farqi esa faqat
+            fayl turida — `title` izohlari buni ochib beradi. */}
         <Button
           variant="ghost"
           size="sm"
@@ -409,6 +494,14 @@ function LessonCard({
           title="Gaplarni tashqi tts.sh quvuri uchun .txt fayl qilib yuklab olish"
         >
           .txt eksport
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onBackup}
+          title={`Zaxira: matn va hozirgi holat (${done} / ${total} gap) bilan .json fayl. Import ekranidan qaytariladi.`}
+        >
+          .json eksport
         </Button>
         <Button
           variant="ghost"
@@ -504,8 +597,12 @@ function LessonCard({
             id={confirmTextId}
             className="font-mono text-[13px] leading-relaxed text-[#ff9f9f]"
           >
-            &laquo;{title}&raquo; o&apos;chirilsinmi? Matn ham, davom ettirish nuqtasi ham
-            yo&apos;qoladi va qaytarib bo&apos;lmaydi — nusxa faqat shu brauzerda saqlanadi.
+            &laquo;{title}&raquo; o&apos;chirilsinmi? Matn ham, davom ettirish nuqtasi
+            ham, gaplarga yozilgan izoh va rasmlar ham yo&apos;qoladi — nusxa faqat shu
+            brauzerda saqlanadi. Qaytarishning yagona yo&apos;li — OLDINDAN olingan
+            zaxira fayli (shu kartadagi &laquo;.json eksport&raquo; yoki Statistikadagi
+            darslar zaxirasi): uni Import ekranidan tiklaganda dars izohlari bilan
+            birga shu holatida qaytadi.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button variant="danger" size="sm" onClick={onConfirmDelete}>
@@ -537,7 +634,16 @@ export function Home() {
   // ichida chaqirsak, o'chirishdan keyin React qayta render qilish uchun sabab
   // ko'rmaydi va o'chirilgan dars ekranda qolib ketardi.
   const [lessons, setLessons] = useState<Lesson[]>(() => listLessons())
-  const [summary] = useState<Summary>(readSummary)
+  // `null` — hali yuklanmagan. Statistika endi IndexedDB'da, ya'ni uni render
+  // paytida sinxron o'qib bo'lmaydi (docs/stats-longterm.md §3.2a).
+  const [summary, setSummary] = useState<Summary | null>(null)
+  // Banner uchun (§8.4d). Boshlang'ich `ready`: ombor odatda ishlaydi va
+  // yuklanish paytida ogohlantirish miltillab ketishi kerak emas.
+  const [availability, setAvailability] = useState<StatsAvailability>('ready')
+  // Yuklash XATO bilan tugadi. `summary` abadiy `null` bo'lib qolganda ekran
+  // jimgina "…" ko'rsatib turardi — foydalanuvchi kutayotgan narsa hech qachon
+  // kelmasligini bilmasdi.
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
   const [restartUndo, setRestartUndo] = useState<RestartUndo | null>(null)
@@ -545,6 +651,64 @@ export function Home() {
   // O'chirishdan keyin fokus shu sarlavhaga qo'yiladi — u ro'yxat chizilganda
   // ham, bo'sh holat chizilganda ham joyida qoladigan yagona nuqta.
   const headingRef = useRef<HTMLHeadingElement>(null)
+
+  // Statistikani yuklash. `initStats()` AVVAL kutiladi (§9): u boot'da
+  // `main.tsx` dan ham chaqirilgan, lekin natijasi kutilmagan — ya'ni bu yerda
+  // to'g'ridan-to'g'ri o'qish migratsiya tugamasdan bo'sh omborni ko'rishi
+  // mumkin edi.
+  //
+  // `cancelled` SHART: foydalanuvchi javob kelgunicha boshqa ekranga o'tsa,
+  // uzilgan komponentda `setState` chaqirilardi. Bu yerda effekt bir marta
+  // ishlaydi, lekin naqsh boshqa ekranlarniki bilan bir xil.
+  //
+  // ⚠️ TARTIB MUHIM: `setAvailability` `initStats()` dan DARHOL keyin, o'qishlardan
+  // OLDIN chaqiriladi. Ilgari u o'qishlardan KEYIN turardi va `blocked` banneri
+  // HECH QACHON chiqmasdi: `statsDb.ts` `onblocked` dan keyin so'rovni saqlab
+  // qo'yadi, ya'ni keyingi `openDb()` yangi so'rov chiqarmaydi va `totals()`
+  // bloklovchi tab yopilmaguncha umuman hal bo'lmaydi — `setAvailability` ga
+  // esa navbat yetmasdi. `Stats.tsx` buni boshidan to'g'ri qilgan.
+  // Yetim izohlarni supurish. Bu ekran — darslarning ishonchli ro'yxatini
+  // ushlab turgan YAGONA joy, shuning uchun supurgi shu yerda.
+  //
+  // `deleteLesson` yonidagi tozalash yetarli emas: dars boshqa tabda o'chirilgan,
+  // buzuq payload yo'li bilan yo'qolgan yoki o'chirish paytida IDB yozmagan
+  // bo'lishi mumkin. Narxi — ikkita `getAllKeys()`, blob ochilmaydi.
+  //
+  // ⚠️ `main.tsx` ga QO'YILMAYDI: u domen modullarini ataylab import qilmaydi va
+  // u yerdagi supurgi ishlayotgan import bilan poyga bo'lardi.
+  useEffect(() => {
+    // ⚠️ TANIB BO'LMAGAN yozuv bo'lsa supurilmaydi. `listLessons()` faqat
+    // O'QILGAN darslarni beradi; `toLesson` rad etgan yozuv esa `unknown` bo'lib
+    // diskda ATAYIN saqlanadi (Statistika ekranida "tanilmagan yozuvlar" bo'lib
+    // ko'rinadi va foydalanuvchi uni tiklashi mumkin). Ular ro'yxatga
+    // tushmagani uchun supurgi ularning izohini "yetim" deb o'chirib yuborardi —
+    // dars matni saqlanib qolgani holda qo'lda yozilgan izoh yo'qolardi.
+    if (unknownLessonCount() > 0) return
+
+    // Bo'sh ro'yxatda ham supurgi HECH NARSA qilmaydi (`notes.ts` dagi qorovul):
+    // darslar omborini o'qib bo'lmagan holat "dars qolmadi" dan farq qilmaydi.
+    void pruneOrphanNotes(listLessons().map((lesson) => lesson.id))
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const state = await initStats()
+      if (!cancelled) setAvailability(state)
+      const [value, streak] = await Promise.all([totals(), streakDays()])
+      if (cancelled) return
+      setSummary({ totals: value, streak })
+    })().catch((err: unknown) => {
+      // `withStatsDb` `InvalidStateError` dan boshqa xatolarni QAYTA TASHLAYDI,
+      // ya'ni bu shox haqiqiy. `.catch` siz bu boshqarilmagan rad javobi bo'lib,
+      // ekran abadiy "…" da qolib ketardi.
+      if (cancelled) return
+      setLoadError(errorText(err))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // "Boshidan" oynasining taymeri. Ref da: o'zgarishi qayta renderni talab
   // qilmaydi, faqat keyingi bosishda eskisini bekor qilish uchun kerak.
@@ -592,6 +756,40 @@ export function Home() {
     setRestartUndo(null)
   }
 
+  /**
+   * Darsning zaxirasini `.json` fayl qilib beradi.
+   *
+   * ⚠️ Ombordan QAYTA o'qiladi (`exportLessonJson` ichida `getLesson`), ro'yxatdagi
+   * `lesson` dan yozilmaydi: `handleAudio` dagi bilan bir xil sabab — bu ro'yxat
+   * mashq boshlanganidan beri eskirgan bo'lishi mumkin va zaxira o'sha eski
+   * progressni "hozirgi holat" deb saqlab qo'yardi.
+   *
+   * Shu sababdan dars TOPILMASLIGI ham mumkin (boshqa tabda o'chirilgan) — bunda
+   * bo'sh fayl bermaymiz: "zaxira oldim" degan yolg'on ishonch keyin qimmatga
+   * tushadi. Xabar `notice` orqali beriladi, chunki ekranda boshqa yo'l yo'q.
+   */
+  async function handleBackup(id: string): Promise<void> {
+    const current = getLesson(id)
+    // ⚠️ ASYNC: izohlar va rasmlar IndexedDB'dan o'qiladi va faylga base64
+    // bo'lib qo'shiladi (`store/lessonBackup.ts`). Rasmli darsda bu bir necha
+    // yuz millisekund olishi mumkin — shu vaqtda tugma `busy` holatida turadi.
+    const text = current === null ? null : await exportLessonBackup(id)
+    if (current === null || text === null) {
+      setLessons(listLessons())
+      setNotice("Dars topilmadi — zaxira olinmadi. Ro'yxat yangilandi.")
+      return
+    }
+
+    downloadFile(
+      text,
+      `${safeFileName(current)}-${stamp(new Date())}.json`,
+      'application/json;charset=utf-8',
+    )
+    setNotice(
+      `«${current.title === '' ? 'Nomsiz dars' : current.title}» zaxirasi .json fayl bo'lib yuklab olindi.`,
+    )
+  }
+
   function handleDelete(id: string): void {
     const removed = lessons.find((lesson) => lesson.id === id)
 
@@ -601,6 +799,11 @@ export function Home() {
     headingRef.current?.focus()
 
     deleteLesson(id)
+    // Izohlar va rasmlar dars bilan birga ketadi — aks holda rasm bloblari
+    // kvotani abadiy egallab qolardi. Natija KUTILMAYDI: dars allaqachon
+    // o'chirildi va bu yerdagi nosozlik uchun foydalanuvchi qila oladigan ish
+    // yo'q; qolib ketgan qatorni keyingi yuklashdagi supurgi oladi.
+    void deleteLessonNotes(id)
     const next = listLessons()
     setConfirmId(null)
     setLessons(next)
@@ -666,18 +869,107 @@ export function Home() {
           {/* Tartib Stats.tsx bilan KANONIK: net wpm -> aniqlik -> seans -> faol
               vaqt -> seriya. Bir xil beshta raqam ikki ekranda boshqa tartibda
               turishi "Batafsil" bosgan foydalanuvchini chalg'itardi. */}
+          {/* ⚠️ `netWpm` — NISBAT, shuning uchun `partial` (ya'ni «≥») unga
+              QO'LLANMAYDI: `partial` izohiga qarang. `null` esa "izchil oyna
+              yo'q" degani — nol ham, taxmin ham emas. */}
           <Stat
             label="net wpm"
-            value={formatWpm(summary.netWpm)}
+            value={
+              loadError !== null
+                ? FAILED
+                : summary === null
+                  ? PENDING
+                  : summary.totals === null || summary.totals.netWpm === null
+                    ? UNKNOWN
+                    : formatWpm(summary.totals.netWpm)
+            }
             accent
             hint="Faol vaqtga og'irliklangan"
           />
-          <Stat label="aniqlik" value={formatPercent(summary.accuracy)} />
-          <Stat label="seans" value={String(summary.sessions)} />
-          <Stat label="faol vaqt" value={formatDuration(summary.activeMs)} />
-          <Stat label="seriya" value={`${summary.streak} kun`} />
+          <Stat
+            label="aniqlik"
+            value={
+              loadError !== null
+                ? FAILED
+                : summary === null
+                  ? PENDING
+                  : summary.totals === null || summary.totals.accuracy === null
+                    ? UNKNOWN
+                    : formatPercent(summary.totals.accuracy)
+            }
+          />
+          <Stat
+            label="seans"
+            value={
+              loadError !== null
+                ? FAILED
+                : summary === null
+                  ? PENDING
+                  : summary.totals === null
+                    ? UNKNOWN
+                    : // `≥` AYNAN shu yerda o'rinli: `sessions` — xom, MONOTON
+                      // hisoblagich, ya'ni haqiqiy qiymat ko'rsatilgandan faqat
+                      // KO'P bo'lishi mumkin (§4.3 jadvali).
+                      partial(String(summary.totals.sessions), summary.totals.sessionsSince)
+            }
+          />
+          <Stat
+            label="faol vaqt"
+            value={
+              loadError !== null
+                ? FAILED
+                : summary === null
+                  ? PENDING
+                  : summary.totals === null
+                    ? UNKNOWN
+                    : // ⚠️ `≥` YO'Q va bu ATAYIN: `activeMs` `days` do'konidan
+                      // ANIQ bilinadi (`days` hech qachon qisqartirilmaydi), ya'ni
+                      // unga "falon sanadan beri" belgisini qo'yish aniq sonni
+                      // noaniq qilib ko'rsatardi (§4.3 jadvali).
+                      formatDuration(summary.totals.activeMs)
+            }
+          />
+          <Stat
+            label="seriya"
+            value={loadError !== null ? FAILED : summary === null ? PENDING : `${summary.streak} kun`}
+          />
         </dl>
+
+        {loadError !== null ? (
+          <p className="mt-3 font-mono text-[11px] leading-relaxed text-[#f2cf8a]">
+            Statistikani o&apos;qib bo&apos;lmadi ({loadError}). Mashq ishlayveradi — faqat
+            shu yerdagi raqamlar ko&apos;rsatilmaydi.
+          </p>
+        ) : null}
+
+        {/* `*Since` belgisi bir marta izohlanadi — beshta qatorga takrorlanmaydi. */}
+        {summary?.totals?.sessionsSince !== undefined ? (
+          <p className="mt-3 font-mono text-[11px] leading-relaxed text-muted">
+            «≥» belgisi qo&apos;yilgan raqamlar migratsiyada faqat qisman
+            tiklangan: ular ko&apos;rsatilgandan KAM emas, lekin undan ko&apos;p
+            bo&apos;lishi mumkin.
+          </p>
+        ) : null}
+
+        {/* ⚠️ Bu `sessionsSince` DAN BOSHQA narsa: u XOM hisoblagichga tegishli,
+            bu esa NISBATGA. Nisbatning surati bilan maxraji AYNAN bir davrni
+            qamrashi shart, shuning uchun ombor ularni faqat izchil oynadan
+            hisoblaydi — va oyna qaysi kundan boshlanganini aytib qo'yish shart,
+            aks holda raqam butun tarixniki bo'lib ko'rinardi. */}
+        {summary?.totals?.ratiosSince !== undefined ? (
+          <p className="mt-3 font-mono text-[11px] leading-relaxed text-muted">
+            net wpm va aniqlik{' '}
+            <span className="text-[#e6edf3]">
+              {dayNumberToKey(summary.totals.ratiosSince)}
+            </span>{' '}
+            dan beri o&apos;lchangan kunlardan hisoblangan — undan oldingi kunlar
+            bunga kirmaydi. Ularga «≥» qo&apos;yilmaydi: nisbat monoton emas, u
+            keyingi ma&apos;lumot bilan pasayishi ham mumkin.
+          </p>
+        ) : null}
       </section>
+
+      <StatsBanner availability={availability} />
 
       <section>
         {/* E'lon hududi DOIM chiziladi: bo'sh joyga keyin qo'shilgan
@@ -735,6 +1027,14 @@ export function Home() {
                   lesson={lesson}
                   confirming={confirmId === lesson.id}
                   onRestart={() => handleRestart(lesson.id)}
+                  onBackup={() => {
+                    // Natija KUTILMAYDI: xato bo'lsa `handleBackup` ning o'zi
+                    // `notice` ga yozadi, `.catch` esa boshqarilmagan rad
+                    // javobini to'xtatadi.
+                    void handleBackup(lesson.id).catch(() => {
+                      setNotice("Zaxira olinmadi — qaytadan urinib ko'ring.")
+                    })
+                  }}
                   onAskDelete={() => setConfirmId(lesson.id)}
                   onCancelDelete={() => setConfirmId(null)}
                   onConfirmDelete={() => handleDelete(lesson.id)}
@@ -748,10 +1048,25 @@ export function Home() {
                 `pt-4`) o'z bo'limiga ankerlangan. Ilgari bu xatboshi bo'lim
                 tugagach erkin osilib qolardi va tasodifiy qoldiq matnga
                 o'xshab ko'rinardi. */}
-            <p className="mt-6 border-t border-white/[0.06] pt-4 font-mono text-[11px] leading-relaxed text-muted">
-              Davom ettirish gap darajasida ishlaydi: yarim yozilgan gap saqlanmaydi, mashq doim
-              gap boshidan tiklanadi.
-            </p>
+            <div className="mt-6 space-y-2 border-t border-white/[0.06] pt-4">
+              <p className="font-mono text-[11px] leading-relaxed text-muted">
+                Davom ettirish gap darajasida ishlaydi: yarim yozilgan gap saqlanmaydi, mashq doim
+                gap boshidan tiklanadi.
+              </p>
+              {/* Tiklash yo'li KARTADA emas, shu yerda aytiladi: u kerak bo'lganda
+                  (dars o'chirilgandan keyin) karta allaqachon yo'q bo'ladi. */}
+              <p className="font-mono text-[11px] leading-relaxed text-muted">
+                &laquo;.json eksport&raquo; darsni hozirgi holati bilan saqlaydi —{' '}
+                <Link
+                  to="/import"
+                  className="text-[#5ee6c1] underline decoration-[#5ee6c1]/30 underline-offset-4 transition-colors hover:decoration-[#5ee6c1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ee6c1]"
+                >
+                  Import
+                </Link>{' '}
+                ekranidagi &laquo;zaxiradan tiklash&raquo; uni o&apos;chirib yuborilgandan
+                keyin ham o&apos;sha joyidan qaytaradi.
+              </p>
+            </div>
           </>
         )}
       </section>

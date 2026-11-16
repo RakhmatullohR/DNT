@@ -19,11 +19,22 @@
 //    "Enter kutilmoqda" holatini yoqadi. Avtomatik o'tilsa har gapning oxirgi
 //    so'zi doim yarim eshitilardi.
 //
-// 4. YOZUV VA NAVIGATSIYA AJRATILGAN. Seansni yozish (`recordAndClose`) sof
-//    funksiya, marshrutni esa faqat `endSession` almashtiradi. Sabab: seans
+// 4. YOZUV VA NAVIGATSIYA AJRATILGAN. Seansni yopish (`recordAndClose`)
+//    marshrutni almashtirmaydi — buni faqat `endSession` qiladi. Sabab: seans
 //    komponent UZILGANDA ham yozilishi kerak ("Mashqni to'xtatish", orqaga,
 //    tab yopilishi), lekin o'sha yo'lda navigatsiya bo'lsa Bosh sahifaga
 //    chiqmoqchi bo'lgan foydalanuvchi natijalar ekraniga uloqtirilardi.
+//
+// 5. ⭐ OMBOR HAR GAPDA YOZILADI (docs/stats-longterm.md §8.2), seans oxirida
+//    EMAS. Sabab §8 da: IndexedDB asinxron, ya'ni `pagehide` da chiqarilgan
+//    tranzaksiya sahifa o'lishidan oldin ulgurmasligi mumkin. Yozuv nuqtasini
+//    har gapga ko'chirish yo'qotish radiusini butun seansdan BITTA GAPGA
+//    tushiradi. Buning ikkita to'g'ridan-to'g'ri oqibati bor:
+//      - so'z hissasi DELTA bo'lishi shart (`wordDeltaOf`), kumulyativ emas —
+//        aks holda har gapda oldingilari qayta sanalardi (§8.1);
+//      - seans `id` si seans BOSHIDA ajratiladi (§8.2.4), ya'ni "yozildimi"
+//        degan javob endi `id` ning `null` ligidan CHIQMAYDI — buning uchun
+//        alohida `hasWrittenRef` bayrog'i bor.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -34,19 +45,23 @@ import { requestBatch } from '../audio/ttsClient.ts'
 import { mapKeydown, shouldPreventDefault } from '../core/keyboard.ts'
 import { computeMetrics } from '../core/metrics.ts'
 import {
-  hasWrittenSentence,
   nextSentenceIndex,
+  planSentenceWrite,
   SESSION_MAX_MS,
   SESSION_MAX_SENTENCES,
   sessionShouldEnd,
+  wordDeltaOf,
 } from '../core/session.ts'
+import type { WordDelta } from '../core/session.ts'
 import { tokenize } from '../core/tokenize.ts'
 import { createState, reduce, wordTokenAt } from '../core/typing.ts'
 import type { Effect, TypingEvent, TypingState } from '../core/types.ts'
 import type { Lesson } from '../store/lessons.ts'
 import { completeSentence } from '../store/lessons.ts'
-import type { SentenceRecord, SessionRecord, WordStat } from '../store/stats.ts'
-import { recordSession } from '../store/stats.ts'
+import { writeSentences, writeSessionEnvelope } from '../store/stats.ts'
+import type { SentenceWrite } from '../store/stats.ts'
+import { roundSentence } from '../store/statsSchema.ts'
+import type { SentenceRecord, SessionEnvelope } from '../store/statsSchema.ts'
 
 /** Ovoz yoqiq/o'chiq holati shu kalitda eslab qolinadi (PLAN §8 dagi M2/M3 gate). */
 const AUDIO_KEY = 'dnt.audio.v1'
@@ -162,6 +177,15 @@ function isTextEntryTarget(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
 }
 
+/**
+ * `skipped` gapning so'z hissasi — BO'SH xarita.
+ *
+ * Modul darajasida BITTA nusxa: u hech qachon o'zgartirilmaydi (`writeSentences`
+ * uni faqat o'qiydi), ya'ni har tashlangan gapda yangi `Map` yaratish bekorga
+ * ish bo'lardi.
+ */
+const NO_WORDS: ReadonlyMap<string, WordDelta> = new Map()
+
 function wordsOf(sentence: string): string[] {
   const words: string[] = []
   for (const token of tokenize(sentence)) {
@@ -219,12 +243,38 @@ export function useTypingSession(lesson: Lesson): TypingSession {
   const [serverOk, setServerOk] = useState(true)
   const [now, setNow] = useState(() => Date.now())
 
+  /**
+   * ⭐ Seans identifikatori SEANS BOSHIDA ajratiladi (§8.2.4).
+   *
+   * Ilgari u `recordAndClose` ichida, seans TUGAGANDA yasalardi. Gap
+   * darajasidagi yozuvda bu mumkin emas: birinchi gap omborga tushayotganda
+   * qaysi qatorga qo'shilishini bilish kerak, ya'ni kalit undan OLDIN
+   * mavjud bo'lishi shart.
+   */
+  const [sessionId] = useState(newSessionId)
+
   /** Seans boshlangan payt = eng birinchi bosish (PLAN §6: taymer birinchi bosishda). */
   const startedAtRef = useRef<number | null>(null)
   /** Joriy gapdagi `Tab` bosishlari soni. */
   const restartsRef = useRef(0)
   const recordsRef = useRef<SentenceRecord[]>([])
-  const wordStatsRef = useRef<Map<string, WordStat>>(new Map())
+  /**
+   * §8.2.5 darvoza buferi: birinchi YOZILGAN gap paydo bo'lgunicha ushlab
+   * turilgan `skipped` gaplar. Qaror `core/session.ts` dagi
+   * `planSentenceWrite` da — bu yerda faqat holat saqlanadi.
+   */
+  const pendingRef = useRef<readonly SentenceWrite[]>([])
+  /**
+   * ⭐ "Bu seansda rostdan yozilgan gap bormi" — PLAN §7 dagi bo'sh seans
+   * darvozasining YANGI signali.
+   *
+   * Ilgari bu javob `recordAndClose` ning `null` qaytarishidan chiqardi, u esa
+   * `id` ni o'sha yerda yasagani uchun ishlardi. Endi `id` seans boshida
+   * ajratiladi (yuqoriga qarang), ya'ni `null` ni "yozilmadi" belgisi sifatida
+   * ishlatib bo'lmaydi — signal ALOHIDA bo'lishi shart. `endSession` ning
+   * tarmoqlanishi shu bilan O'ZGARISHSIZ qoladi.
+   */
+  const hasWrittenRef = useRef(false)
   /** Seans yozilib bo'ldi — ikkinchi marta yozilmasligi va bosishlar o'tmasligi uchun. */
   const closedRef = useRef(false)
   const unlockedRef = useRef(false)
@@ -339,8 +389,62 @@ export function useTypingSession(lesson: Lesson): TypingSession {
   }, [])
 
   /**
-   * ⭐ SOF YOZUV: statistikani omborga yozadi va yangi seans `id` sini qaytaradi.
-   * Yozadigan narsa bo'lmasa `null`.
+   * Seansning KONVERTI (§8.2.3): gaplarsiz yig'indi.
+   *
+   * WPM lar `activeMs` bo'yicha OG'IRLIKLI o'rtacha bilan yig'iladi. Bu oddiy
+   * o'rtachadan farqli o'laroq matematik jihatdan aynan to'g'ri:
+   * `netWpm_i = belgilar_i / (5 · daqiqa_i)` bo'lgani uchun
+   * `Σ(netWpm_i · ms_i) / Σms_i = jami belgilar / (5 · jami daqiqa)`.
+   *
+   * ⚠️ YAXLITLASH TARTIBI (§2.3): manba sifatida `recordsRef` dagi ALLAQACHON
+   * yaxlitlangan gaplar olinadi (`finishSentence` `roundSentence` ni yozuvni
+   * yasashda qo'llaydi), og'irlikli o'rtacha esa aynan shulardan chiqadi.
+   * Teskari tartibda diskdagi seans WPM i diskdagi gaplardan qayta
+   * hisoblanmaydigan bo'lib qolardi: Natijalar ekranida yig'indi bilan gaplar
+   * jadvali oxirgi kasrda kelishmay, uni tekshirgan odam mavjud bo'lmagan
+   * xatoni qidirardi.
+   *
+   * `skipped` gaplar yig'indiga KIRMAYDI (PLAN §6a).
+   */
+  const envelopeOf = useCallback(
+    (at: number): SessionEnvelope => {
+      let activeMs = 0
+      let keystrokes = 0
+      let correctKeystrokes = 0
+      let netWeighted = 0
+      let rawWeighted = 0
+      for (const record of recordsRef.current) {
+        if (record.skipped) continue
+        activeMs += record.activeMs
+        keystrokes += record.keystrokes
+        correctKeystrokes += record.correctKeystrokes
+        netWeighted += record.netWpm * record.activeMs
+        rawWeighted += record.rawWpm * record.activeMs
+      }
+
+      return {
+        lessonId: lesson.id,
+        lessonTitle: lesson.title,
+        startedAt: startedAtRef.current ?? at,
+        endedAt: at,
+        activeMs,
+        keystrokes,
+        correctKeystrokes,
+        netWpm: activeMs > 0 ? netWeighted / activeMs : 0,
+        rawWpm: activeMs > 0 ? rawWeighted / activeMs : 0,
+        accuracy: keystrokes > 0 ? correctKeystrokes / keystrokes : 1,
+      }
+    },
+    [lesson.id, lesson.title],
+  )
+
+  /**
+   * Seansni YOPADI: yakuniy konvertni yozadi va `id` ni qaytaradi. Yozadigan
+   * narsa bo'lmasa `null`.
+   *
+   * ⚠️ FAQAT KONVERT yoziladi (§8.2.3). So'z, kun va umrbod hisoblagichlar har
+   * gapda allaqachon yangilangan; ularni bu yerda qayta qo'shish §8.1 dagi
+   * "ikki marta sanash" ning to'g'ridan-to'g'ri o'zi bo'lardi.
    *
    * NAVIGATSIYA QILMAYDI — aynan shuning uchun ajratilgan. Bu funksiya
    * komponent uzilganda ("Mashqni to'xtatish", brauzerda orqaga, marshrut
@@ -352,59 +456,38 @@ export function useTypingSession(lesson: Lesson): TypingSession {
    * React StrictMode ning dev rejimidagi SOXTA unmount'i (u hech qanday yozuv
    * bo'lmagan paytda yuz beradi) seansni tug'ilishidayoq o'ldirardi: keyingi
    * har bir bosish `closedRef` da to'xtab qolardi.
+   *
+   * ⚠️ Natija KUTILMAYDI (`void … .catch`): `pagehide` yo'lida kutishning
+   * ma'nosi yo'q (sahifa o'lmoqda), boshqa yo'llarda esa yozuvni kutish
+   * navigatsiyani sekinlashtirardi. Yo'qotilishi mumkin bo'lgan yagona narsa —
+   * yakuniy `endedAt` va og'irlangan yig'indi; gaplarning O'ZI, so'z va kun
+   * hisoblagichlari allaqachon diskda.
+   *
+   * ⚠️ BITTA ISTISNO — MIGRATSIYA OYNASI. "Allaqachon diskda" da'vosi
+   * `writeSentences` ning tranzaksiyasi OCHILGAN bo'lishiga tayanadi, u esa
+   * `stats.ts` dagi §9 qorovulida (`await ensureReady()`) migratsiya
+   * tugagunicha kutadi. O'sha oynada sahifa o'lsa, kutayotgan gaplar diskka
+   * UMUMAN tushmaydi va bu yerda ularni qutqaradigan narsa yo'q:
+   * `writeSessionEnvelope` faqat MAVJUD seans qatorini yangilaydi, yangisini
+   * YARATMAYDI. Oyna bitta boot bilan chegaralangan (migratsiya ulanish
+   * bo'yicha memoizatsiya qilinadi) va odatda bir necha ms — gap terish esa
+   * sekundlar, ya'ni amalda yetib borilmaydi. ONGLI almashuv: qorovulsiz
+   * tartib kafolati umuman bo'lmasdi (`PLAN.md` §11.3, 11-invariant).
    */
   const recordAndClose = useCallback(
     (at: number): string | null => {
       if (closedRef.current) return null
 
-      const records = recordsRef.current
-      if (!hasWrittenSentence(records)) {
-        // Bitta ham gap YOZILMAGAN seans statistikani faqat ifloslantirardi.
-        // Yozuvlar SONIGA emas, `skipped` bo'lmaganlariga qaraladi: Escape bilan
-        // tashlangan gap ham `recordsRef` ga tushadi, lekin yig'indiga kirmaydi
-        // (PLAN §6a) — ya'ni hammasi tashlangan seans omborga `activeMs: 0`,
-        // `netWpm: 0`, `accuracy: 0` bo'lib yozilardi.
-        return null
-      }
+      // Bitta ham gap YOZILMAGAN seans statistikani faqat ifloslantirardi.
+      // Bayroq `planSentenceWrite` tomonidan qo'yiladi: Escape bilan tashlangan
+      // gap `recordsRef` ga tushadi, lekin darvozani OCHMAYDI (PLAN §6a, §7).
+      if (!hasWrittenRef.current) return null
+
       freeze()
-
-      let activeMs = 0
-      let keystrokes = 0
-      let correctKeystrokes = 0
-      let netWeighted = 0
-      let rawWeighted = 0
-      for (const record of records) {
-        if (record.skipped) continue
-        activeMs += record.activeMs
-        keystrokes += record.keystrokes
-        correctKeystrokes += record.correctKeystrokes
-        netWeighted += record.netWpm * record.activeMs
-        rawWeighted += record.rawWpm * record.activeMs
-      }
-
-      const id = newSessionId()
-      const session: SessionRecord = {
-        id,
-        lessonId: lesson.id,
-        lessonTitle: lesson.title,
-        startedAt: startedAtRef.current ?? at,
-        endedAt: at,
-        sentences: records,
-        activeMs,
-        keystrokes,
-        correctKeystrokes,
-        netWpm: activeMs > 0 ? netWeighted / activeMs : 0,
-        rawWpm: activeMs > 0 ? rawWeighted / activeMs : 0,
-        accuracy: keystrokes > 0 ? correctKeystrokes / keystrokes : 1,
-      }
-
-      const wordDelta: Record<string, WordStat> = {}
-      for (const [word, stat] of wordStatsRef.current) wordDelta[word] = stat
-
-      recordSession(session, wordDelta)
-      return id
+      void writeSessionEnvelope(sessionId, envelopeOf(at)).catch(() => undefined)
+      return sessionId
     },
-    [freeze, lesson.id, lesson.title],
+    [envelopeOf, freeze, sessionId],
   )
 
   /** Seansni yozadi VA natijaga qarab marshrutni almashtiradi (normal tugash yo'li). */
@@ -460,8 +543,10 @@ export function useTypingSession(lesson: Lesson): TypingSession {
       const metrics = computeMetrics(snapshot)
       const at = Date.now()
 
-      recordsRef.current.push({
-        lessonId: lesson.id,
+      // ⚠️ YAXLITLASH AYNAN SHU YERDA (§2.3): `recordsRef` ham, omborga
+      // ketadigan nusxa ham AYNAN bir xil sonlarni ko'radi, ya'ni seans
+      // konverti diskdagi gaplardan qayta hisoblanadigan bo'lib qoladi.
+      const record = roundSentence({
         sentenceIndex: index,
         at,
         activeMs: metrics.activeMs,
@@ -477,20 +562,41 @@ export function useTypingSession(lesson: Lesson): TypingSession {
         // o'rtasida ham bosilishi mumkin.
         audioEnabled: audioEnabledRef.current,
       })
+      recordsRef.current.push(record)
 
-      if (!skipped) {
-        // So'z statistikasi (PLAN §6): har so'z bir "ta'sirlanish", xatolar esa
-        // reducer yig'gan `errorCounts` dan olinadi.
-        for (let i = 0; i < snapshot.tokens.length; i++) {
-          const token = snapshot.tokens[i]
-          if (token === undefined || token.kind !== 'word') continue
-          const key = token.text.toLowerCase()
-          const current = wordStatsRef.current.get(key) ?? { exposures: 0, errors: 0 }
-          wordStatsRef.current.set(key, {
-            exposures: current.exposures + 1,
-            errors: current.errors + (snapshot.errorCounts.get(i) ?? 0),
-          })
-        }
+      // ⭐ §8.1 — SO'Z DELTASI, kumulyativ xarita EMAS.
+      //
+      // Ilgari bu yerda seans davomida o'sib boradigan `wordStatsRef` xaritasi
+      // yuritilardi va u seans oxirida BIR MARTA omborga quyilardi. Yozuv
+      // nuqtasi har gapga ko'chgach o'sha xarita HALOKATLI bo'lib qoladi:
+      // ikkinchi gapdan keyin birinchi gapning hissasi ikkinchi marta,
+      // uchinchisidan keyin uchinchi marta yozilardi. Shuning uchun xarita
+      // butunlay olib tashlandi va uning o'rniga har gap O'Z deltasini beradi.
+      //
+      // Delta `core/session.ts` da hisoblanadi (`wordDeltaOf`) — u yerda sof,
+      // React'siz va mock'siz sinaladi. Xato TA'SIRLANISH darajasida sanaladi
+      // (`min(…, 1)`), ya'ni `errors` = "bu so'z necha marta XATO BILAN
+      // yozilgan"; sabab va almashuvlar o'sha funksiyaning izohida.
+      const write: SentenceWrite = {
+        ...record,
+        words: skipped ? NO_WORDS : wordDeltaOf(snapshot.tokens, snapshot.errorCounts),
+      }
+
+      // ⭐ §8.2.5 DARVOZA BUFERI. Hammasi `Escape` bilan tashlangan seans HECH
+      // NARSA yozmasligi kerak (PLAN §7, test bilan mixlangan), lekin yozuv
+      // endi gap darajasida. Qaror `planSentenceWrite` da: birinchi YOZILGAN
+      // gap paydo bo'lgunicha tashlanganlar buferda ushlanadi va o'sha gap
+      // bilan BIRGA, bitta tranzaksiyada quyiladi.
+      const plan = planSentenceWrite(pendingRef.current, hasWrittenRef.current, write)
+      pendingRef.current = plan.pending
+      hasWrittenRef.current = plan.hasWritten
+
+      if (plan.write.length > 0) {
+        // Natija KUTILMAYDI: ombor yozuvi UI ni bloklamasligi kerak — bu
+        // IndexedDB'ga o'tishning bosh sabablaridan biri (§3.2a). Xato yutiladi,
+        // chunki mashqni davom ettirish saqlashdan muhimroq; ombor umuman
+        // ishlamayotgan bo'lsa banner `initStats()` natijasidan chiqadi (§8.4d).
+        void writeSentences(sessionId, envelopeOf(at), plan.write).catch(() => undefined)
       }
 
       const nextIndex = index + 1
@@ -518,7 +624,16 @@ export function useTypingSession(lesson: Lesson): TypingSession {
       resetTyping(nextSentence)
       prefetchFrom(nextIndex)
     },
-    [announceSkip, endSession, lesson.id, lesson.sentences, prefetchFrom, resetTyping],
+    [
+      announceSkip,
+      endSession,
+      envelopeOf,
+      lesson.id,
+      lesson.sentences,
+      prefetchFrom,
+      resetTyping,
+      sessionId,
+    ],
   )
 
   /** `Tab` — gapni qayta boshlash: `playedWords` bo'shaydi, ovozlar tiklanadi (PLAN §4). */
@@ -648,6 +763,15 @@ export function useTypingSession(lesson: Lesson): TypingSession {
    * taymer tugagan. Ya'ni 15 ta gap yozib "Mashqni to'xtatish" bosgan
    * foydalanuvchining `SessionRecord` i, so'z statistikasi va seriyasi JIMGINA
    * yo'qolardi.
+   *
+   * ⚠️ YO'QOTISH RADIUSI M3 dan keyin BUTUNLAY BOSHQA. Ilgari bu tinglovchi
+   * BUTUN seansni sinxron `localStorage.setItem` bilan yozardi va u sahifa
+   * o'lishidan oldin ulgurardi. Endi gaplar, so'zlar, kunlar va umrbod
+   * hisoblagichlar HAR GAPDA yozilgan (§8.2), ya'ni bu yerda yozilishi kerak
+   * bo'lgan yagona narsa — seansning yakuniy konverti. IndexedDB asinxron
+   * bo'lgani uchun u ulgurmasligi MUMKIN, va o'shanda yo'qoladigan narsa
+   * `endedAt` bilan og'irlangan yig'indi bo'ladi, mashq tarixi emas: seans
+   * qatori oxirgi gap yozilgan paytdagi konvert bilan diskda qoladi.
    *
    * Bu yerda ATAYIN `recordAndClose` chaqiriladi, `endSession` emas: navigatsiya
    * bo'lsa Bosh sahifaga chiqmoqchi bo'lgan foydalanuvchi natijalar ekraniga

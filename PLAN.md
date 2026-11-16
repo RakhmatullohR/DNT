@@ -435,6 +435,9 @@ Reducer sof, lekin ekranda ham ikkita qaror bor va ikkalasi ham xato SIGNAL haqi
 - **Kursordagi belgi foni yo'q, rangi ham yozilmagan belgilarniki bilan bir xil.** Uni ajratib ko'rsatish "bu allaqachon yozilgan" deb aytardi — holbuki u hali terilmagan. Kursor o'rnini chiziqning o'zi ko'rsatadi; chiziq alohida, absolyut joylashtirilgan element, shuning uchun probel ustida ham ko'rinadi. Bloklangan holat chiziq VA harf rangidan bilinadi, ya'ni fon bu yerda hech qanday ma'lumot tashimaydi.
 - **Probel oddiy probel bo'lib qoladi.** Avval bu yerda uzilmas probel (U+00A0) turardi — kursor qator oxiriga tushganda ko'rinsin deb. Lekin u qator uzish imkoniyatini yo'q qiladi: kursor `way| to` dagi probelga tushishi bilan `to` keyingi so'zga yopishib, ikkalasi birga pastki qatorga sakrardi. Ya'ni matn terish davomida o'z-o'zidan qayta joylashardi. `whitespace-pre-wrap` qator oxiridagi probelni baribir saqlaydi, demak uzilmas probel hech narsa bermay, faqat joylashuvni buzgan.
 - **`BlockedKey` + `nonce` — xato chaqnashi.** Qat'iy bosh harf ilovadagi eng chalg'ituvchi qoida, jimgina turib qolgan kursor esa buzuq klaviatura kabi o'qiladi. `nonce` shuning uchun bor: ketma-ket ikkita bir xil xatoda ham chaqnash qaytadan ishlashi kerak.
+- **⭐ Bosh harf rejimi (`src/core/mask.ts`) — mashqni ko'chirishdan diktantga aylantiradi.** Reducer bundan BEXABAR: rejim faqat chizishga tegadi, target ham, statistika ham, ovoz ham o'zgarmaydi. Qoida bitta: **so'zning birinchi harfidan boshqa HARFLARI yashiriladi.** Tinish belgisi, probel va raqam (`gap` tokenlari) ko'rinib qoladi, chunki ular ovozsiz (§3) va `block` rejimida ko'rinmaydigan vergul foydalanuvchini taxminga majbur qilardi; so'z ichidagi apostrof/tire ham shu sababdan ochiq (`don't` → `d··'·`). Yozib bo'lingan qism ham ochiladi — aks holda xato rangi va nuqtali tag chizig'i ma'nosini yo'qotardi.
+  Yashirish **`visibility: hidden`** bilan, `color: transparent` bilan EMAS: (1) `forced-colors: active` da brauzer matn rangini majburan almashtiradi va shaffof harf o'sha muhitda butunlay ochilib qolardi, (2) shaffof matnni sichqoncha bilan tanlab ko'rish mumkin. Ikkalasi ham joyni saqlaydi, ya'ni "matn sakramasin" shartida farq yo'q. Kursor chizig'i `visible` bilan qaytariladi (`visibility` meros bo'ladi).
+  Sozlama `localStorage` da (`store/prefs.ts`, `dnt.prefs.v1`) — diqqat rejimidan farqli: seans 10 gap/10 daqiqada tugab, ekran qayta ulanadi, ya'ni saqlanmasa rejimni kuniga o'nlab marta qayta yoqishga to'g'ri kelardi. Ekran o'quvchi uchun `sr-only` matn TO'LIQ qoladi (niqob u yerda qiyinlik emas, to'siq bo'lardi), xato maslahati esa ("kutilgan belgi") ATAYIN o'chirilmaydi — u so'zni eshitib ololmagan foydalanuvchi uchun yagona chiqish yo'li, narxi esa aniqlik ko'rsatkichida ko'rinadi.
 
 ---
 
@@ -508,7 +511,7 @@ Qo'shimcha: `validateRate` da **diapazon tekshiruvi yo'q** (`:140-154`) — noto
 
 ## 6. Statistika
 
-`localStorage`: `dnt.lessons.v1`, `dnt.stats.v1`.
+Darslar — `localStorage` (`dnt.lessons.v1`). **Statistika — IndexedDB (`dnt-stats`, to'rtta do'kon: `words`, `days`, `sessions`, `meta`)**; §11 va `docs/stats-longterm.md`. `dnt.stats.v1` faqat migratsiya KIRISHI sifatida o'qiladi.
 
 - **Net WPM** = `(to'g'ri belgilar / 5) / daqiqa`, **Raw WPM** alohida. "To'g'ri belgilar" —
   `typed.length`, ya'ni ekranda TURGAN matn: backspace uni kamaytiradi.
@@ -517,12 +520,17 @@ Qo'shimcha: `validateRate` da **diapazon tekshiruvi yo'q** (`:140-154`) — noto
   harf ikki marta sanaladi va kunlik WPM gap darajasidagi Net WPM dan biroz yuqori chiqadi.
   Sabab ombor shaklida: kunlik jadval seans yopilganda faqat yig'ma sonlarni saqlaydi
   (`activeMs`, `keystrokes`, `correctKeystrokes`) — `typed.length` gap yozuvi bilan birga
-  yashaydi va 500 seansdan keyin eng eskilari tashlanadi (§6b). Ya'ni to'g'ri belgilarni
-  kunlik saqlash uchun jadvalga yangi maydon kerak bo'lardi; tanlov — trend uchun mavjud
-  kattalikni ishlatish. Gap, seans, `totals()` va `audioComparison()` — hammasi to'g'ri
-  formulada; farq faqat trend chizig'ida va u UI da aytilgan.
+  yashaydi va retention chegarasidan keyin eng eskilari tashlanadi (§6b).
+  ✅ **§11 da TUZATILDI:** kunlik jadvalga `nc` (net belgilar) maydoni qo'shildi va u
+  gap yozuvidan hosil qilinadi (`netWpm · activeMs/60000 · 5`), ya'ni endi trend ham
+  to'g'ri formulada. ⚠️ Lekin `nc` faqat OLDINGA ishlaydi: migratsiyada u faqat omon
+  qolgan seanslardan tiklanadi, undan eskiroq kunlar esa taqribiy trendda qoladi va
+  UI da shunday belgilanadi. Yo'q maydon nol EMAS.
 - **Aniqlik** = `to'g'ri bosishlar / jami bosishlar`.
-- **Xato so'zlar — ta'sirlanish soniga nisbatan.** `{word: {exposures, errors}}` saqlanadi, ro'yxat `errors/exposures` bo'yicha va faqat `exposures ≥ 5` bo'lganlar orasida tartiblanadi. Xom son bo'yicha tartiblansa ro'yxat boshini doim `the` egallardi — 200 marta uchraydi, qiyin bo'lgani uchun emas. Tartib uch bosqichli: ulush → ta'sirlanish soni → alifbo; oxirgisi faqat natija har chaqiruvda bir xil chiqishi uchun.
+- **Xato so'zlar — SO'NUVCHI hisoblagichlar va empirik Bayes bali bo'yicha** (§11; to'liq asos `docs/stats-longterm.md` §5–§6). Saqlanadigan shakl `{word: {exposures, errors, f?, l?, de?, dx?}}`; tartib `score = (dx + m·g)/(de + m)` bo'yicha, `m = 20`, `g` — global xato ulushi. Chegara `exposures ≥ 5` SAQLANADI.
+  Bu qoida ikkita xatoni birdan yopadi. Xom son bo'yicha tartiblansa ro'yxat boshini doim `the` egallardi — 200 marta uchraydi, qiyin bo'lgani uchun emas. Umrbod `errors/exposures` bo'yicha tartiblansa esa (v1 dagi qoida) reyting hech narsani UNUTMASDI: uch yil oldin qiynalgan va endi mukammal yoziladigan so'z ro'yxat boshida abadiy qolardi. 90 kunlik yarim yemirilish buni tuzatadi, shrinkage esa bir marta ko'rilgan so'zni bazaviy darajaga tortadi — aks holda `1/1` so'z `10/50` dan yuqori chiqardi.
+  ⚠️ 90 kunlik half-life — **ataylab qilingan MVP soddalashtirishi**, sanoat standarti emas: Duolingo HLR va FSRS uni har element uchun O'RGANADI. Tartib uch bosqichli: ball → ta'sirlanish soni → alifbo; oxirgisi faqat natija har chaqiruvda bir xil chiqishi uchun.
+  ⚠️ Reytingning to'g'riligi `g` ga SEZGIR: `g ≥ 0.143` da tartib ag'darila boshlaydi va uni formula emas, `exposures ≥ 5` to'sig'i ushlab turadi. Shuning uchun Statistika ekrani o'lchangan `g` ni ko'rsatadi va chegaradan oshsa ogohlantiradi.
 - **Natijalar ekranida chegara 1 ga tushiriladi** (`hardestWords(1, ...)`) — bitta seansdan keyin deyarli hech bir so'z 5 martaga yetmaydi va standart chegara bilan ro'yxat doim bo'sh chiqardi. Statistika ekranida §6 dagi 5 martalik chegara saqlanadi, farq esa foydalanuvchiga UI da aytiladi: ro'yxat shu seansda uchragan so'zlardan, ulush esa butun tarix bo'yicha.
   Chegara bilan BIRGA ikkinchi filtr keladi: `errors === 0` bo'lgan so'z ro'yxatga
   umuman kirmaydi. `hardestWords` ning o'zi xatosiz so'zlarni chiqarib tashlamaydi
@@ -552,8 +560,8 @@ va gaplardan qayta hisoblangan yig'indilar.
 Qayta hisoblashning bitta istisnosi bor: `sentences` BO'SH bo'lsa, yig'indilar kirishdan
 qanday kelgan bo'lsa shundayligicha qoladi (maydonlar baribir alohida tozalanadi —
 manfiy, `NaN` va `Infinity` nolga tushadi). Aks holda faqat yig'indi bilan tiklangan
-eski seans — masalan `unknownSessions` orqali qaytib kelgan yoki JSON import qilingan
-yozuv — nolga aylanardi va u bilan birga o'sha kunning seriyasi (§6) ham yo'qolardi.
+eski seans — masalan JSON import qilingan yozuv — nolga aylanardi va u bilan birga
+o'sha kunning seriyasi (§6) ham yo'qolardi. (`unknownSessions` yo'li §11 da o'chdi.)
 
 Uch maydongina izohga muhtoj, chunki faqat ularda qaror bor:
 
@@ -569,10 +577,11 @@ ko'rsatadi — bu ma'lum cheklov va UI da ochiq aytilgan.
 
 `localStorage` ~5 MB. Bitta yillik mashq unga sig'masligi mumkin, shuning uchun:
 
-- **`MAX_SESSIONS = 500`**, chegaradan oshganda eng eski seanslar tashlanadi. Kunlik va so'z yig'indilari esa TO'LIQ qoladi — grafiklar va reyting shulardan chiqadi, ya'ni eski seansni tashlash tarixni yo'qotmaydi.
-- **Kvota to'lganda** yozuv qaytadan urinadi va eski yarmini tashlaydi. Usiz yozuv jimgina uzila boshlardi va foydalanuvchi buni faqat statistika to'xtab qolganda sezardi.
-- **Buzuq payload alohida kalitga ko'chiriladi** (`dnt.stats.v1.corrupt`, `dnt.lessons.v1.corrupt`). Buzuq satrni joyida qoldirish yetarli emas edi: har qanday yozuv butun hujjatni qayta yozgani uchun tiklash oynasi bitta tugagan gapgacha davom etardi.
-- **`unknownSessions` qaytarib yoziladi.** Parser tanimagan seans yozuvi ekranga chiqmaydi, lekin diskka qaytadi — aks holda yangi versiyada yozilgan yozuvlarni eski build birinchi tugagan gapdayoq o'chirib yuborardi.
+- **`RETENTION_DAYS = 180`** (§11; ilgari `MAX_SESSIONS = 500`): seans yozuvlari 180 kun saqlanadi va har boshlanishda `compact()` eskisini o'chiradi. `words` va `days` ABADIY qoladi — grafiklar, reyting va ⭐ M2/M3 gate shulardan chiqadi, ya'ni eski seansni tashlash tarixni yo'qotmaydi. Chegara kun RAQAMIDA solishtiriladi, xom millisekundda emas: `now − 180×86 400 000` DST o'tishlarida chegarani siljitardi.
+- **Kvota siqilishi endi statistikaga tegishli emas** (§11): IndexedDB kvotasi 5 MB shift emas, diskning 10–60% i. Darslar hamon `localStorage` da va o'sha eski qoida ular uchun kuchda qoladi.
+- **Buzuq payload alohida kalitga ko'chiriladi — faqat DARSLAR uchun** (`dnt.lessons.v1.corrupt`). Buzuq satrni joyida qoldirish yetarli emas edi: har qanday yozuv butun hujjatni qayta yozgani uchun tiklash oynasi bitta tugagan gapgacha davom etardi.
+  ⚠️ **Statistika uchun bu quyi tizim O'CHDI** (§11, `docs/stats-longterm.md` §9.2): IndexedDB'da "buzuq satr" tushunchasi yo'q — strukturaviy nusxa yo muvaffaqiyatli, yo baza umuman ochilmaydi. O'rnini `persist()` + muntazam eksport bosadi. Bu ALMASHUV, yaxshilanish emas.
+- ~~**`unknownSessions` qaytarib yoziladi.**~~ ⚠️ **Statistika uchun bu himoya ham YO'QOLDI** (§11): eski build yangi sxemadagi maydonlarni bilmaydi. Ilova bitta qurilmada, bitta versiyada ishlagani uchun xatar past, lekin u NOLGA TUSHMAYDI (masalan eski tab ochiq qolsa). Yumshatish: v2 o'qish yo'li notanish maydonlarni saqlab qoldiradi.
 - **Kun kaliti LOKAL yarim tundan** olinadi, `toISOString()` dan emas: aks holda kechqurungi mashq ertangi kunga tushardi.
 - **Seans WPM'i `activeMs` bo'yicha og'irlangan o'rtacha.** Oddiy o'rtacha bilan bitta qisqa gap butun seansni tortib ketardi.
 - Ovoz almashtirgichi holati `dnt.audio.v1` da saqlanadi.
@@ -706,7 +715,7 @@ Yuqoridagi ro'yxat dastlabki rejadan qolgan. Undan tashqari OLTITA fayl bor va u
 umumiy testlarning uchdan birini tashkil qiladi:
 
 - **`audioManager`** (`client`) — guard oynasi, kutish sloti, kechikish byudjeti va "jimlik hech qachon eshitilgan hisoblanmaydi" sharti. §5b dagi `MAX_LAG_MS < 2 × GUARD_MS` invarianti shu yerda mixlangan.
-- **`stats`** — butun ombor: buzuq payloadni tiklash, kvota siqilishi, eksport/import, seriya, va `audioComparison` ning ustunlarga ajratishi (jumladan eski yozuv "ovozsiz" ustuniga TUSHMASLIGI).
+- **`stats`** (`store` loyihasi, `fake-indexeddb` bilan) — butun ombor: v1→v2 migratsiyasi, so'nish va empirik Bayes reytingi, gap darajasidagi yozuv shartnomasi (ikki marta sanash YO'Q), retention, eksport/import, seriya, va `audioComparison` ning ustunlarga ajratishi (jumladan eski yozuv "ovozsiz" ustuniga TUSHMASLIGI). ⚠️ Buzuq payload va kvota siqilishi testlari o'chdi — §11 da sabab bilan.
 - **`session`** — seans chegaralari va `clampIndex`; tugagan dars 0-indeksdan qayta boshlanishi; bo'sh seans darvozasi — hammasi `Escape` bilan tashlangan seans BO'SH hisoblanishi (§7).
 - **`keyboard`** — modifikatorli tugmalar, IME, va `Shift+Tab` ning to'xtatilmasligi (§4).
 - **`lessons`** — dars CRUD'i va buzuq yozuvga chidamlilik.
@@ -748,7 +757,90 @@ ular uchun qo'lda E2E bor.
 - **Bu "dictation" emas.** Eshitib-yozish emas, imlo↔talaffuz bog'lanishi mashq qilinadi — o'zbek tilida imlo deyarli fonematik, ingliz tilida esa yo'q, shuning uchun qiymati bor, lekin **tinglab tushunish o'rgatilmaydi**. Bog'langan nutq uchun mavjud `noji/phrasal-verbs/tts.sh` quvuri ishlatilaveradi. Yumshatish yetkazilgan: gaplarni `.txt` qilib yuklab olish tugmasi bor — lekin **Bosh sahifadagi dars kartasida**, mashq ekranida emas (reja joyni noto'g'ri aytgan edi; mashq ekranidan qidirgan odam topmaydi).
 - **Alohida sintez = lug'aviy (citation) talaffuz.** `of` → to'liq /ʌv/, tabiiy nutqdagi /əv/ emas; `a` → /eɪ/, /ə/ emas. Bu tuzatib bo'lmaydigan cheklov, faqat bilib turish kerak.
 - **`edge-tts` — norasmiy Microsoft endpoint.** Yumshatish: disk keshi, `speechSynthesis` zaxirasi, parallellik ≤4, timeout, retry.
-- **`localStorage` — yagona nusxa.** Bitta "clear browsing data" oylik tarixni o'chiradi; ikkita ochiq tab oxirgi yozganini g'olib qiladi. Yumshatish yetkazilgan: **ikkala** ombor uchun JSON eksport/import (statistika VA darslar — pastdagi bandga qarang), buzuq payloadni alohida kalitga ko'chirib tiklash (§6b), va `audio-words/` uchun `tar` zaxirasi — buyruqlari README da.
+- **Brauzer ombori — yagona nusxa.** Bitta "clear browsing data" oylik tarixni o'chiradi. ✅ **Ikkita tab muammosi statistika uchun HAL QILINDI** (§11): IndexedDB tranzaksiyalari atomik, ya'ni ikkinchi tabda tugagan seans endi jimgina yo'qolmaydi. Darslar hamon `localStorage` da va ular uchun "oxirgi yozgani g'olib" qoidasi KUCHDA. Yumshatish yetkazilgan: **ikkala** ombor uchun JSON eksport/import, `navigator.storage.persist()` (u butun storage bucket'ini — IndexedDB'ni HAM, `localStorage` ni HAM — himoya qiladi), va `audio-words/` uchun `tar` zaxirasi — buyruqlari README da.
+  ⚠️ `persist()` rad etilishi mumkin, shuning uchun Statistika ekranida holat ko'rsatkichi bor: jimgina yo'qolish o'rniga KO'RINADIGAN holat.
 - **Darslar zaxirasi — statistikanikidan KEYIN qo'shilgan va boshqa qoida bilan ishlaydi.** M4 da faqat statistika zaxiralanardi, chunki himoya qilinayotgan narsa qayta tiklab bo'lmaydigan xato-so'z tarixi edi; dars esa "matnni yana paste qilasiz" deb hisoblangan. Bu ikki sababdan yetarli emas: (1) `.txt` eksport tashqi `tts.sh` quvuri uchun va progressni, tashlangan gaplarni, ta'kidlashni, ovoz/tezlikni tashlab yuboradi; (2) statistika zaxirasi seanslarni saqlaydi, lekin ular ishora qiladigan darslarni emas — toza brauzerda tiklangan seanslar aynan shu sababdan `unknownLessons` bo'lib qolardi. Import qoidasi ham teskari: statistika ALMASHTIRADI (yig'indilar ikkilanmasin), darslar esa BIRLASHTIRADI (turg'un `id` li yakka obyekt, ya'ni takroriy import idempotent) va progressni ORQAGA SURMAYDI.
+  ⚠️ **Zaxira YAKKA dars darajasiga tushirildi va tiklash Import ekraniga chiqarildi.** Ikkovi bitta nuqsonning ikki tomoni edi: eksport faqat "hammasi" bo'lgani va tiklash faqat Statistika ekranida turgani uchun *bitta* adashib o'chirilgan darsni qaytarish yo'li amalda ko'rinmasdi — foydalanuvchi uni dars qo'shiladigan joydan (Import) qidirardi. Endi dars kartasida `.json eksport` bor (`lessons.exportLessonJson`) va Import ekranida "zaxiradan tiklash" bo'limi. Fayl envelope'i `exportLessonsJson` nikidan FARQ QILMAYDI (`lessons` uzunligi bittaga teng, xolos) — shu sababdan o'qish yo'li ham bitta bo'lib qoladi: `importLessonsJson` ikkala faylni ham qabul qiladi va birlashtirish/progress qoidalari o'zgarmaydi. Dars topilmasa `exportLessonJson` `null` qaytaradi — bo'sh envelope "zaxira oldim" degan yolg'on ishonch berardi va bu aynan fayl eng kerak paytda bilinardi.
 - **`shared/` ikki toolchain ostida.** Kelishmasa kesh hech qachon urmaydi. Xatar o'sdi: endi bu bitta emas, **ikkita** fayl — `filename.ts` va `overrides.ts`. Yumshatish ikkalasi uchun bir xil: aniq `.ts` kengaytmasi, hech qanday import atributi, testlar bilan qoplangan.
 - **Mobil klaviatura/IME**: v1 `window.keydown` ga tayanadi, telefonda ishonchli emas.
+
+---
+
+## 11. Statistikani uzoq muddat saqlash (IndexedDB)
+
+**To'liq tahlil, raqamlar va ADR — [`docs/stats-longterm.md`](docs/stats-longterm.md).** Bu bo'lim faqat qabul qilingan qarorlarni va buzilmasligi kerak bo'lgan invariantlarni qayd etadi; asoslash u yerda.
+
+### 11.1. Nima uchun o'zgardi
+
+Uchta nuqson, va **hech biri hajm emas** (`docs/stats-longterm.md` §1):
+
+1. **So'z yozuvida vaqt o'lchovi yo'q edi.** `{exposures, errors}` — umrbod o'rtacha, ya'ni reyting hech narsani unutmaydi va fossilga aylanadi. Bu foydalanuvchining asosiy shikoyati.
+2. **Ikkita ochiq tab ma'lumot yo'qotadi** — har yozuv butun hujjatni qayta yozadi.
+3. **`audioComparison()` eskirish bilan zaiflashadi** — u faqat `sessions` dan o'qiydi, `MAX_SESSIONS = 500` esa kuniga 2 seansda ~8 oyda to'ladi va PLAN §8 dagi ⭐ M2/M3 gate JIMGINA kuchsizlanadi.
+
+⚠️ **Hajm hech qachon bog'lovchi cheklov bo'lmagan.** Heaps qonuni bo'yicha har xil so'zlar soni kvadrat ildiz tezligida o'sadi: 20 yillik ufqda eng yomon holatda ~9 500 so'z ≈ 285 KB. IndexedDB **asinxronlik, tranzaksiya va qisman yozuv** uchun olindi — eviction himoyasi uchun EMAS: `navigator.storage.persist()` butun storage bucket'ini himoya qiladi, ya'ni `localStorage` ni ham (`docs/stats-longterm.md` §3.1). Shuning uchun u migratsiyani kutmasdan, boot'da chaqiriladi.
+
+### 11.2. Ochiq savollarga berilgan javoblar (`docs/stats-longterm.md` §11)
+
+| Savol | Qaror | Kim |
+|---|---|---|
+| 11.1 `words` birlamchi kaliti | **`keyPath: 'w'`** — so'zning o'zi kalit; raqamli id, `nextWordId` va `by_w` indeksi kerak emas | foydalanuvchi |
+| 11.2 Yarim yemirilish | **90 kun**, eksport qilinadigan `HALF_LIFE_DAYS`; **MVP soddalashtirishi deb belgilangan** | hujjat |
+| 11.3 IDB testlari | **`fake-indexeddb` devDependency** — §8.4 ning to'rtta tuzog'i testsiz qolmasin | Claude |
+| 11.4 `hardestWords` to'sig'i | **Hozirgi farq saqlanadi** (Statistika 5, Natijalar 1) + o'lchangan `g` ekranda, `g ≥ 0.143` da ogohlantirish | Claude |
+| 11.5 Yo'nalish | **O'lchov tizimi.** Spaced repetition (FSRS/HLR) qo'shilmaydi | hujjat |
+
+### 11.3. Buzilmasligi kerak bo'lgan invariantlar
+
+Bular testlar bilan mixlangan; buzilsa xato **jimgina** chiqadi.
+
+1. **Eskirish invarianti.** Saqlangan `de`/`dx` — `l` sanasidagi holat, bugungi emas. **Har o'qishda, tartiblashdan OLDIN so'ndirish qo'llanishi SHART.** Bu `g` ga ham tegishli: aks holda bitta hisobda ikki xil vaqt qatlami aralashadi.
+2. **Yozishda tartib: avval SO'NDIRISH, keyin QO'SHISH.** Teskarisida bugungi ta'sirlanish ham o'tmish bilan birga so'nadi.
+3. **`l` MONOTON**, `f` faqat KAMAYADI. Tizim soati orqaga surilsa yoki mintaqa o'zgarsa yozuv buzilmasin. `decayTo` da `dt = max(0, …)`.
+4. **Yo'q maydon ≠ nol.** `f`, `l`, `k`, `nc`, audio chelaklari va `audioEnabled` — hammasi ixtiyoriy va "o'lchanmagan" degani. Migratsiyada tiklanmagani UI da **"noma'lum"** deb chiziladi, migratsiya sanasi yoki nol bilan to'ldirilmaydi.
+   ⚠️ **Ko'rsatish sanasi va so'nish langari — ALOHIDA narsa.** `l` si tiklanmagan so'z ekranda "noma'lum" bo'lib qoladi, lekin so'nish uchun langar sifatida `meta.decayAnchorDay` ishlatiladi (`so'nish sanasi = row.l ?? anchor`). Usiz o'sha so'zlarning urug'lantirilgan `de`/`dx` i abadiy muzlab qolardi va ular aynan §11.1 dagi 1-nuqson bo'lib qolaverardi.
+   Langar migratsiya sanasi EMAS: v1 hujjatida saqlangani (`seedAnchorDay`) AFZAL, chunki u urug'lantirish sodir bo'lgan kunda qo'yilgan va odatda ancha erta — migratsiya kuni bilan almashtirish oradagi butun so'nishni bekor qilib, fossil qatorlarni yana "yangi" qilib ko'rsatardi. Yo'q bo'lsagina migratsiya kuni ishlatiladi.
+5. **`meta.lifetime` ning `since` maydonlari MAYDONMA-MAYDON.** `activeMs` va `correctKeystrokes` `days` dan ANIQ bilinadi (`days` hech qachon qisqartirilmaydi), `netChars`/`sessions`/`keystrokes` esa faqat omon qolgan seanslardan. Bitta umumiy sana qo'yish aynan shu jadval oldini olishi kerak bo'lgan xatoni yasaydi.
+6. **`meta.lifetime` har GAPDA yoziladi, seans yopilishida emas.** Aks holda `pagehide` stsenariysi bu tuzatishning yagona qurboni bo'lardi.
+7. **§8.4a — tranzaksiya avto-commit.** `runTx` ning `body` si SINXRON: IDB'ga tegishli bo'lmagan `await` tranzaksiyani o'ldiradi va keyingi so'rov `TransactionInactiveError` beradi. Bu tip qatlamida ham, ish vaqti qorovuli bilan ham majburlanadi.
+8. **`hasWrittenSentence` darvozasi.** Hammasi `Escape` bilan tashlangan seans HECH NARSA yozmaydi. Gap darajasidagi yozuvda bu ketma-ket kelgan **barcha** tashlangan gaplarni buferda ushlashni talab qiladi.
+9. ⭐ **NISBAT faqat IZCHIL OYNADAN hisoblanadi.** `netWpm` va `accuracy` umrbod hisoblagichlardan yasalMAYDI: `activeMs`/`correctKeystrokes` `days` dan TO'LIQ keladi, `netChars`/`keystrokes` esa faqat omon qolgan seanslardan QISMAN — ya'ni surat va maxraj har xil davrni qamraydi va **nisbatning o'zi buzuq** bo'lib qoladi, qisqa oyna emas.
+   O'lchangan oqibat: haqiqiy **40 wpm / 96%** o'rniga **9.1 wpm / 100.0%**. Yo'nalish determinik — `accuracy` `clamp01` tufayli aynan `1` ga yopishadi, ya'ni migratsiyagacha tarixi bor **har bir** foydalanuvchi «100.0%» ko'rardi. Bu v1 ga nisbatan **regressiya** edi: u yerda oyna qisqa edi-yu, nisbat ichki jihatdan to'g'ri edi.
+   Shuning uchun nisbatlar **aralash davrdan keyingi kunlardan** (`d > meta.mixedEraDay`) hisoblanadi — o'sha kunlar butunlay v2 yozuv yo'li bilan yozilgan, ya'ni `activeMs`, `correctKeystrokes`, `k`, `nc` ning hammasi **ayni gaplar to'plamidan** keladi. Aralash davrdagi kunlarda ular bitta kun ichida ham kelishmaydi.
+   ⚠️ **Chegara `v1MigratedAt` MARKERI EMAS, alohida `meta.mixedEraDay` maydoni**, va ajratish MAJBURIY. Marker "migratsiya **tekshirildi**" degani va u **bo'sh** v1 ombori uchun ham yoziladi (aks holda har boot'da 2 MB hujjat bekorga qayta parse qilinardi). Uni chegara sifatida ishlatish v1 tarixi bo'lmagan — ya'ni **har bir yangi** — foydalanuvchining o'rnatilgan kunini oynadan chiqarib tashlardi: o'lchangan natija `netWpm`/`accuracy` = `null` va ustiga `ratiosSince` "**ertadan beri**" degan yolg'on belgi. `mixedEraDay` esa faqat v1 **kun qatorlari** haqiqatan ko'chirilganda yoziladi (`writePlan`, sharti `plan.days.length > 0`).
+   ⚠️ **Bu shart ATAYIN QO'POL, va uni `importJson` nikiga tenglashtirmang.** Kunning to'la qoplanganini qatorning O'ZIDAN bilib bo'lmaydi: omon qolgan seansi YO'Q kun `k`/`nc` SIZ keladi (uni `foldRatioWindow` baribir tashlaydi), seansi QISMAN omon qolgan kun esa `k`/`nc` BILAN keladi — `buildMigration` ularni har bir omon qolgan yozuvdan yozadi — lekin o'sha `k`/`nc` baza uchtasidan KAMROQ gapni qamraydi va bu farq qatorda KO'RINMAYDI. Shuning uchun ko'chirilgan bitta v1 kuni ham butun davrni "aralash" deb belgilaydi. Narxi: migratsiya kuni `netWpm`/`accuracy` «—» chiqadi va migratsiyagacha bo'lgan kunlar oynaga hech qachon kirmaydi. Bu ONGLI konservatizm — oyna kerakligidan TOR bo'lgani yolg'on nisbatdan afzal, va aynan shuning uchun `importJson` ning `k`/`nc` fingerprinti asimmetriyaning **xavfliroq** uchi: u qisman qoplangan kunni O'TKAZIB YUBORADI.
+   `importJson` chegarani QAYTA hisoblaydi: `meta.clear()` uni ham o'chiradi, tiklanmasa fayldagi eski, seansi qisqartirilgan kunlar izchil oynaga qo'shilib, bu nuqson **zaxirani tiklash orqali** qaytardi. Fingerprint — `k` yoki `nc` si yo'q kun qatori (v2 yozuv yo'li ikkalasini ham har doim yozadi).
+   `k` yoki `nc` yo'q kun oynadan **butunlay tashlanadi**, nol bilan to'ldirilmaydi (4-invariant) — aks holda `activeMs` maxrajga tushib, `nc` surati tushmasdi va xato qaytardi. O'lchov yo'q bo'lsa `null`, va UI uni «—» deb chizadi.
+   ⚠️ **`≥` belgisi faqat XOM MONOTON hisoblagichga qo'llanadi** (`sessions`, `keystrokes`, `activeMs`). Nisbat monoton emas — «≥ 100%» degan da'vo taxmin emas, **yolg'on**.
+10. ⭐ **Xato TA'SIRLANISH darajasida sanaladi, klavish darajasida emas.** `useTypingSession` so'z hissasini `min(errorCounts, 1)` bilan yozadi, ya'ni `errors` = *"bu so'z necha marta xato bilan yozilgan"*.
+   Bu qorovul **manbada** turishi shart. Ombor darajasidagi qisqich (`errors > exposures ? exposures : errors`) sinovdan o'tmaydi: u **tartibga bog'liq** bo'lib qoladi — ayni mashq tarixi seanslar tartibiga qarab `17%` yoki `50%` beradi, va buzilish qaytarib bo'lmaydigan umrbod hisoblagichda sodir bo'ladi. `stats.ts` dagi qisqichlar SAQLANADI, lekin endi ular hech qachon ishlamasligi kerak bo'lgan invariant qorovuli (`importJson` begona fayl ham qabul qiladi).
+   Yon foyda: `estimateBeta` (§6.3) `p_i` ni binomial ulush deb modellaydi — bu faqat shu birlikda ma'noga ega.
+   ⚠️ Almashuv: xato og'irligi (nechta harf) saqlanmaydi. U ombor qisqichi tufayli allaqachon yo'qolgan edi, ya'ni yangi yo'qotish emas.
+
+11. ⭐ **YOZUV MIGRATSIYANI KUTADI, va qorovul OMBORDA turadi.** `writeSentences()` ishni boshlashdan oldin shu ulanish uchun migratsiya tugashini kutadi.
+   Qorovul chaqiruvchida EMAS va bu ataylab: `Practice.tsx` — omborga yozadigan **yagona** ekran va `initStats()` ni chaqirmaydigan **yagona** ekran, ya'ni "avval migratsiya" qoidasi aynan yozadigan yo'lda faqat **konvensiya** bilan ushlab turilardi. Oyna real: `main.tsx` `void initStats()` chiqaradi va render bloklanmaydi, gap esa o'sha paytda tugashi mumkin. Chaqiruvchiga qo'yilgan qorovul keyingi yozadigan chaqiruvchi paydo bo'lganda jimgina yo'qolardi.
+   Memoizatsiya kaliti — **ulanishning o'zi** (`WeakMap<IDBDatabase, …>`), modul darajasidagi bayroq emas: `db.onclose` dan keyin (foydalanuvchi tab ochiq turganda sayt ma'lumotini tozaladi) `openDb()` yangi havola qaytaradi va migratsiya qayta tekshiriladi, bayroq esa bo'shatilgan bazada "ko'chirilgan" deb yolg'on aytib turardi.
+   ⚠️ **Qorovul yozuvni TO'XTATMAYDI va `writePlan` dagi birlashtirishni ORTIQCHA QILMAYDI.** Migratsiya yiqilsa gap baribir diskka tushadi (ombor nosozligi mashqni yeb qo'ymasin) va nosozlik **keshlanmaydi** — keyingi urinishda diskda migratsiyadan oldin yozilgan jonli qator turadi. Qorovul TAB ICHIDA tartib beradi, birlashtirish esa MA'LUMOTNI YO'QOTMASLIKNI: ular ikki xil qatlam.
+   ⚠️ **Almashuv: qorovul yozuvni KECHIKTIRADI.** Migratsiya oynasida `writeSentences` tranzaksiyani hali OCHMAGAN bo'ladi, ya'ni o'sha oynada sahifa o'lsa (`pagehide`) kutayotgan gaplar diskka umuman tushmaydi — `writeSessionEnvelope` ularni qutqarmaydi, chunki u faqat **mavjud** seans qatorini yangilaydi. Bu `useTypingSession` dagi "gaplarning O'ZI allaqachon diskda" taxminining yagona istisnosi. Oyna bitta boot bilan chegaralangan va bir necha ms, gap terish esa sekundlar — amalda yetib borilmaydi, lekin almashuv **yozilmagan qolmasin**: qorovulsiz tartib kafolati umuman bo'lmasdi.
+
+12. **Migratsiya oynasidagi yozuv `put` bilan USTIDAN YOZILMAYDI.** `writePlan` `words`/`days`/`meta.lifetime` uchun **o'qi-birlashtir-yoz** qiladi. O'lchangan zarar (ko'r `put` da): `alpha` ta'sirlanishi 11 → 10, bugungi `correctKeystrokes` 948 → 900, `totals().sessions` 1 → 0.
+   Birlashtirishda diskdagi qatorning **notanish maydonlari** ham, **seriyalari** (`s`/`b`) ham saqlanadi: `s` — `l` si kechroq qatorniki (joriy seriya eng so'nggi ta'sirlanishga tegishli), `b` — maksimum. `sessions` esa ATAYIN ko'r `put` bo'lib qoladi — v1 seanslarining `id` lari eski build tomonidan ajratilgan, oynada yozilgani esa yangi seans.
+
+### 11.4. Ataylab rad etilganlar
+
+| Nima | Nega |
+|---|---|
+| Lemmatizatsiya | Terish mashqi yuza shakl haqida: `running` ni yozish `run` ni yozish emas |
+| Wilson pastki chegarasi | `1/1 → 0.207` va `10/50 → 0.112` — u ham tartibni teskari qiladi |
+| Spaced repetition (FSRS/HLR) | Vazifa boshqa: bu yerda matn KO'RINIB turadi, ya'ni "esda qolish ehtimoli" o'lchanmaydi. Mashq birligi — gap, so'z emas. Poydevor mos qoldirilgan (`l`, `de`/`dx`, `s`/`b`) |
+| Belgi darajasidagi statistika | `charErrors` mavjud, lekin bu ilova terish tezligi emas, imlo↔talaffuz uchun. Uni saqlash yangi o'sish o'qi ochardi |
+| Oylik rollup | 20 yilda `days` ~2.5 MB — IDB kvotasi oldida hech narsa |
+| So'z bo'yicha tarix massivi | Chegarasiz o'sadi. `de`/`dx` xuddi shu ma'lumotni sobit ikkita songa siqadi |
+
+### 11.5. Yo'qotilgan narsalar (almashuv, yaxshilanish emas)
+
+- **Buzuq payload tiklash quyi tizimi o'chdi.** IndexedDB'da "buzuq satr" tushunchasi yo'q. O'rnini `persist()` + muntazam eksport bosadi.
+- **Oldinga moslik himoyasi yo'qoldi** (`unknownSessions`): eski build yangi sxemadagi maydonlarni bilmaydi. Yumshatish — o'qishda notanish maydonlarni saqlab qoldirish.
+- **`s`/`b` seriyalari migratsiyada TIKLANMAYDI.** Qaysi so'zda xato qilingani gap darajasida hech qachon saqlanmagan (`errorCounts` diskka yozilmaydi), shuning uchun ular migratsiyadan boshlab oldinga sanaladi.
+- **`k`, `nc` va audio chelaklari faqat OLDINGA ishlaydi.** Migratsiyada ular faqat omon qolgan seanslardan tiklanadi; undan eskiroq kunlar hozirgi taqribiy trendda qoladi.
+- **ZAXIRA TIKLASH IZCHIL OYNANI QAYTA TORAYTIRADI.** `mixedEraDay` — hosila qiymat va u eksport faylida OLIB YURILMAYDI (`decayAnchorDay` dan farqli: uni qayta hisoblab bo'lmaydi, chegarani esa kun qatorlari shaklidan taxmin qilish mumkin). `importJson` uni fingerprint bilan qayta chiqaradi va **BUGUNGI** kunga qo'yadi, ya'ni fayldagi sof v2 kunlari ham oynadan chiqib ketadi va qaytmaydi (chegara faqat oldinga suriladi). `k`/`nc` si yo'q v1 kun qatorlari omborda abadiy qolgani uchun (kun qatorlari qisqartirilmaydi) bu **har bir** kelgusi tiklashda takrorlanadi. Xom hisoblagichlar va barcha kun/so'z qatorlari SAQLANADI — yo'qoladigani faqat nisbat oynasining kengligi, va u keyingi mashq kunlaridan qayta yig'iladi.
